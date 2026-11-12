@@ -483,4 +483,48 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
     [self broadcastThemeChange];
 }
 
+- (void)applyZalithPreset {
+    // Bảng màu Material 3, gần đúng với Zalith 2 (không phải bản sao chính xác).
+    NSDictionary<NSString *, NSString *> *dark = @{
+        @"amethyst_accent_color":         @"#D0BCFF",
+        @"amethyst_bg_color":             @"#141218",
+        @"amethyst_card_bg_color":        @"#211F26",
+        @"amethyst_sidebar_bg_color":     @"#1D1B20",
+        @"amethyst_topbar_bg_color":      @"#1D1B20",
+        @"amethyst_rightpanel_bg_color":  @"#1D1B20",
+        @"amethyst_text_color":           @"#E6E0E9",
+        @"amethyst_secondary_text_color": @"#CAC4D0",
+    };
+    NSDictionary<NSString *, NSString *> *light = @{
+        @"amethyst_accent_color":         @"#6750A4",
+        @"amethyst_bg_color":             @"#FEF7FF",
+        @"amethyst_card_bg_color":        @"#F3EDF7",
+        @"amethyst_sidebar_bg_color":     @"#F7F2FA",
+        @"amethyst_topbar_bg_color":      @"#F7F2FA",
+        @"amethyst_rightpanel_bg_color":  @"#F7F2FA",
+        @"amethyst_text_color":           @"#1D1B20",
+        @"amethyst_secondary_text_color": @"#49454F",
+    };
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    for (NSString *key in dark) {
+        NSString *darkKey = [self modePrefKeyFor:key dark:YES];
+        NSString *lightKey = [self modePrefKeyFor:key dark:NO];
+        [defaults setObject:dark[key] forKey:darkKey];
+        [defaults setObject:light[key] forKey:lightKey];
+        _colorOverrides[darkKey] = [self colorFromHex:dark[key]];
+        _colorOverrides[lightKey] = [self colorFromHex:light[key]];
+    }
+
+    // Zalith không có viền và bo góc lớn hơn; opacity giữ 100%.
+    _uiBorderEnabled = NO;
+    _uiBorderCornerRadius = 16.0;
+    _uiOpacity = 1.0;
+    [defaults setBool:NO forKey:@"amethyst_ui_border_enabled"];
+    [defaults setFloat:16.0 forKey:@"amethyst_ui_border_radius"];
+    [defaults setFloat:1.0 forKey:@"amethyst_ui_opacity"];
+
+    [self broadcastThemeChange];
+}
+
 @end

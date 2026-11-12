@@ -7,6 +7,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+// CALayer.contentsScale mặc định là 1.0 (không phải 0), nên điều kiện "> 0"
+// cũ không bao giờ fallback: drawable tạo lúc init bị kẹt ở 1x trên Retina
+// (cùng triệu chứng mà nhánh TGLMT đã ghi nhận). Trả về scale thực tế =
+// scale màn hình × độ phân giải đã lưu, đúng giá trị SurfaceViewController
+// gán cho contentsScale, để drawable khớp kích thước cửa sổ game.
+static CGFloat MobileGLDrawableScale(CALayer *layer) {
+    CGFloat current = layer.contentsScale;
+    if (current > 1.0) return current;
+    CGFloat res = getPrefFloat(@"video.resolution") / 100.0;
+    if (res <= 0) res = 1.0;
+    return UIScreen.mainScreen.scale * res;
+}
+
 @interface GameSurfaceView()
 - (void)notifyTGLESResizeIfNeeded;
 - (void)notifyTGLMTResizeIfNeeded;
@@ -39,7 +52,7 @@
     // ANGLE copy paths). Keeps Metal validation from rejecting the surface.
     ml.framebufferOnly = NO;
     CGSize boundsSize = ml.bounds.size;
-    CGFloat scale = ml.contentsScale > 0 ? ml.contentsScale : UIScreen.mainScreen.scale;
+    CGFloat scale = MobileGLDrawableScale(ml);
     CGSize want = CGSizeMake(MAX(2, boundsSize.width * scale),
                              MAX(2, boundsSize.height * scale));
     if (isTGLMT) {
@@ -86,7 +99,7 @@
     CALayer *layer = self.layer;
     if (![layer isKindOfClass:CAMetalLayer.class]) return;
     CAMetalLayer *ml = (CAMetalLayer *)layer;
-    CGFloat scale = ml.contentsScale > 0 ? ml.contentsScale : UIScreen.mainScreen.scale;
+    CGFloat scale = MobileGLDrawableScale(ml);
     int w = (int)MAX(2, ml.bounds.size.width * scale);
     int h = (int)MAX(2, ml.bounds.size.height * scale);
     extern void tglmt_notify_resize(int, int);
@@ -127,7 +140,7 @@
     }
     if (!resizeFn) return;
     CAMetalLayer *ml = (CAMetalLayer *)layer;
-    CGFloat scale = ml.contentsScale > 0 ? ml.contentsScale : UIScreen.mainScreen.scale;
+    CGFloat scale = MobileGLDrawableScale(ml);
     int w = (int)MAX(2, ml.bounds.size.width * scale);
     int h = (int)MAX(2, ml.bounds.size.height * scale);
     static BOOL loggedResize = NO;

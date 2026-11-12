@@ -53,6 +53,10 @@ extern NSString * const ThemeDidChangeNotification;
 - (void)applyInterfaceStyle:(UIUserInterfaceStyle)style;
 - (void)applyThemeToAllWindows;
 - (void)resetAppearance;
+// Áp preset giao diện kiểu Zalith (Material 3): bảng màu tối và sáng, accent
+// tím nhạt, card và sidebar tông nhẹ, bo góc 16 pt, không viền. Không đụng
+// tới ảnh/video nền của người dùng.
+- (void)applyZalithPreset;
 - (void)broadcastThemeChange;
 - (void)updateBackgroundBlur;
 - (void)applyBorderStyleToAllWindows;

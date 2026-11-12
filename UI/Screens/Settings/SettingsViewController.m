@@ -268,6 +268,7 @@
             @{@"type": @"picker", @"label": localize(@"appearance.mainbar_landscape", nil), @"key": @"general.mainsidebar_landscape", @"default": @"left", @"options": @[@"left", @"right", @"bottom"]},
             @{@"type": @"export", @"label": localize(@"appearance.export_theme", nil)},
             @{@"type": @"import", @"label": localize(@"appearance.import_theme", nil)},
+            @{@"type": @"color", @"label": localize(@"appearance.zalith", nil), @"key": @"amethyst_apply_zalith"},
             @{@"type": @"color", @"label": localize(@"appearance.reset", nil), @"key": @"amethyst_reset_appearance"},
         ]},
         @{@"title": localize(@"Developer", nil), @"items": @[
@@ -1160,6 +1161,7 @@
             [self showPickerForItem:item fromTable:_searchResultsTable];
         } else if ([type isEqualToString:@"color"]) {
             if ([item[@"key"] isEqualToString:@"amethyst_reset_appearance"]) [self resetAppearance];
+            else if ([item[@"key"] isEqualToString:@"amethyst_apply_zalith"]) [self applyZalithPreset];
             else [self showColorPickerForKey:item[@"key"] label:item[@"label"]];
         } else if ([type isEqualToString:@"image"]) {
             [self showImagePicker];
@@ -1204,6 +1206,8 @@
     } else if ([type isEqualToString:@"color"]) {
         if ([item[@"key"] isEqualToString:@"amethyst_reset_appearance"]) {
             [self resetAppearance];
+        } else if ([item[@"key"] isEqualToString:@"amethyst_apply_zalith"]) {
+            [self applyZalithPreset];
         } else {
             [self showColorPickerForKey:item[@"key"] label:item[@"label"]];
         }
@@ -1868,6 +1872,11 @@
 
 - (void)resetAppearance {
     [ThemeManager.shared resetAppearance];
+    [self reloadTables];
+}
+
+- (void)applyZalithPreset {
+    [ThemeManager.shared applyZalithPreset];
     [self reloadTables];
 }
 
