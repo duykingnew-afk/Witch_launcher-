@@ -484,26 +484,27 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
 }
 
 - (void)applyZalithPreset {
-    // Bảng màu Material 3, gần đúng với Zalith 2 (không phải bản sao chính xác).
+    // Theme mặc định Embermire của Zalith 2, lấy đúng từ ui/theme/Color.kt
+    // và Theme.kt của Zalith (palette Material 3, cả chế độ sáng và tối).
     NSDictionary<NSString *, NSString *> *dark = @{
-        @"amethyst_accent_color":         @"#D0BCFF",
-        @"amethyst_bg_color":             @"#141218",
-        @"amethyst_card_bg_color":        @"#211F26",
-        @"amethyst_sidebar_bg_color":     @"#1D1B20",
-        @"amethyst_topbar_bg_color":      @"#1D1B20",
-        @"amethyst_rightpanel_bg_color":  @"#1D1B20",
-        @"amethyst_text_color":           @"#E6E0E9",
-        @"amethyst_secondary_text_color": @"#CAC4D0",
+        @"amethyst_accent_color":         @"#FFB59F",
+        @"amethyst_bg_color":             @"#1C110E",
+        @"amethyst_card_bg_color":        @"#291D19",
+        @"amethyst_sidebar_bg_color":     @"#241916",
+        @"amethyst_topbar_bg_color":      @"#241916",
+        @"amethyst_rightpanel_bg_color":  @"#291D19",
+        @"amethyst_text_color":           @"#F4DED8",
+        @"amethyst_secondary_text_color": @"#DFC0B7",
     };
     NSDictionary<NSString *, NSString *> *light = @{
-        @"amethyst_accent_color":         @"#6750A4",
-        @"amethyst_bg_color":             @"#FEF7FF",
-        @"amethyst_card_bg_color":        @"#F3EDF7",
-        @"amethyst_sidebar_bg_color":     @"#F7F2FA",
-        @"amethyst_topbar_bg_color":      @"#F7F2FA",
-        @"amethyst_rightpanel_bg_color":  @"#F7F2FA",
-        @"amethyst_text_color":           @"#1D1B20",
-        @"amethyst_secondary_text_color": @"#49454F",
+        @"amethyst_accent_color":         @"#A63A17",
+        @"amethyst_bg_color":             @"#FFF8F6",
+        @"amethyst_card_bg_color":        @"#FFE9E4",
+        @"amethyst_sidebar_bg_color":     @"#FFF1ED",
+        @"amethyst_topbar_bg_color":      @"#FFF1ED",
+        @"amethyst_rightpanel_bg_color":  @"#FFE9E4",
+        @"amethyst_text_color":           @"#241916",
+        @"amethyst_secondary_text_color": @"#58423B",
     };
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
@@ -516,12 +517,13 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
         _colorOverrides[lightKey] = [self colorFromHex:light[key]];
     }
 
-    // Zalith không có viền và bo góc lớn hơn; opacity giữ 100%.
+    // Card ngoài của Zalith bo 28 pt (đúng bằng giới hạn tối đa của Witch).
+    // Zalith không có viền; opacity giữ 100%.
     _uiBorderEnabled = NO;
-    _uiBorderCornerRadius = 16.0;
+    _uiBorderCornerRadius = 28.0;
     _uiOpacity = 1.0;
     [defaults setBool:NO forKey:@"amethyst_ui_border_enabled"];
-    [defaults setFloat:16.0 forKey:@"amethyst_ui_border_radius"];
+    [defaults setFloat:28.0 forKey:@"amethyst_ui_border_radius"];
     [defaults setFloat:1.0 forKey:@"amethyst_ui_opacity"];
 
     [self broadcastThemeChange];
