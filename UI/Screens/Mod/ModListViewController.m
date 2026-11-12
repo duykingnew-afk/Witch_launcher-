@@ -1,6 +1,7 @@
 #import "ModListViewController.h"
 #import "ModDetailViewController.h"
 #import "ThemeManager.h"
+#import "ZalithStyle.h"
 #import "MainCoordinator.h"
 #import "ModrinthService.h"
 #import "AmethystProjectCell.h"
@@ -68,17 +69,18 @@
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
     if (self) {
         self.selectionStyle = UITableViewCellSelectionStyleNone;
-        self.backgroundColor = ThemeManager.shared.cardBackgroundColor;
-        self.layer.cornerRadius = 8;
-        self.layer.borderWidth = 1;
-        self.layer.borderColor = [ThemeManager.shared.accentColor colorWithAlphaComponent:0.45].CGColor;
-        self.clipsToBounds = YES;
+        // Card Zalith: nền bo 28 nằm trong backgroundView, layoutSubviews chừa khe dọc.
+        self.backgroundColor = UIColor.clearColor;
+        UIView *cardBg = [[UIView alloc] init];
+        cardBg.backgroundColor = ThemeManager.shared.cardBackgroundColor;
+        cardBg.layer.cornerRadius = ZalithCardRadius();
+        cardBg.clipsToBounds = YES;
+        self.backgroundView = cardBg;
 
         _projectIcon = [[UIImageView alloc] init];
         _projectIcon.translatesAutoresizingMaskIntoConstraints = NO;
         _projectIcon.contentMode = UIViewContentModeScaleAspectFill;
         _projectIcon.clipsToBounds = YES;
-        _projectIcon.layer.cornerRadius = 8;
         _projectIcon.tintColor = ThemeManager.shared.secondaryTextColor;
         [self.contentView addSubview:_projectIcon];
 
@@ -115,10 +117,8 @@
         _versionBtn.translatesAutoresizingMaskIntoConstraints = NO;
         [_versionBtn setTitle:localize(@"Select Version", nil) forState:UIControlStateNormal];
         [_versionBtn setTitleColor:ThemeManager.shared.primaryTextColor forState:UIControlStateNormal];
-        _versionBtn.backgroundColor = ThemeManager.shared.cardBackgroundColor;
-        _versionBtn.layer.cornerRadius = 6;
-        _versionBtn.layer.borderWidth = 1;
-        _versionBtn.layer.borderColor = ThemeManager.shared.separatorColor.CGColor;
+        _versionBtn.backgroundColor = ZalithTonalColor();
+        _versionBtn.layer.borderWidth = 0;
         _versionBtn.titleLabel.font = [UIFont systemFontOfSize:9 weight:UIFontWeightMedium];
         _versionBtn.titleLabel.adjustsFontSizeToFitWidth = YES;
         _versionBtn.titleLabel.minimumScaleFactor = 0.7;
@@ -132,7 +132,6 @@
         [_downloadBtn setTitle:localize(@"Download", nil) forState:UIControlStateNormal];
         [_downloadBtn setTitleColor:ThemeManager.shared.buttonTextColor forState:UIControlStateNormal];
         _downloadBtn.backgroundColor = ThemeManager.shared.accentColor;
-        _downloadBtn.layer.cornerRadius = 6;
         _downloadBtn.titleLabel.font = [UIFont systemFontOfSize:9 weight:UIFontWeightSemibold];
         _downloadBtn.titleLabel.adjustsFontSizeToFitWidth = YES;
         _downloadBtn.titleLabel.minimumScaleFactor = 0.7;
@@ -184,15 +183,22 @@
     return self;
 }
 
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    // Khe 6 pt trên và dưới giữa các card; không khe ngang để nội dung vẫn nằm trong card.
+    self.backgroundView.frame = CGRectInset(self.bounds, 0, 6);
+    _projectIcon.layer.cornerRadius = ZalithIconRadius(_projectIcon.bounds.size.width);
+    _versionBtn.layer.cornerRadius = _versionBtn.bounds.size.height / 2;
+    _downloadBtn.layer.cornerRadius = _downloadBtn.bounds.size.height / 2;
+}
+
 - (void)updateTheme {
-    self.backgroundColor = ThemeManager.shared.cardBackgroundColor;
-    self.layer.borderColor = [ThemeManager.shared.accentColor colorWithAlphaComponent:0.45].CGColor;
+    self.backgroundView.backgroundColor = ThemeManager.shared.cardBackgroundColor;
     _titleLabel.textColor = ThemeManager.shared.primaryTextColor;
     _downloadsLabel.textColor = ThemeManager.shared.accentColor;
     _descLabel.textColor = ThemeManager.shared.secondaryTextColor;
     _projectIcon.tintColor = ThemeManager.shared.secondaryTextColor;
-    _versionBtn.backgroundColor = ThemeManager.shared.cardBackgroundColor;
-    _versionBtn.layer.borderColor = ThemeManager.shared.separatorColor.CGColor;
+    _versionBtn.backgroundColor = ZalithTonalColor();
     [_versionBtn setTitleColor:ThemeManager.shared.primaryTextColor forState:UIControlStateNormal];
     [self applyInstallState];
 }
@@ -507,6 +513,7 @@
     _searchBar.delegate = self;
     _searchBar.placeholder = @"Search mods...";
     _searchBar.searchBarStyle = UISearchBarStyleMinimal;
+    ZalithStyleSearchBar(_searchBar);
     [self.view addSubview:_searchBar];
 
     _spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
@@ -593,6 +600,7 @@
 }
 
 - (void)updateColors {
+    ZalithStyleSearchBar(_searchBar);
     ThemeManager *theme = ThemeManager.shared;
     if ([AmethystBlurView blurEnabled]) {
         // Clear — the realtime frost behind provides the backdrop. A dark

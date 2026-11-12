@@ -1,5 +1,6 @@
 #import "ModDetailViewController.h"
 #import "ThemeManager.h"
+#import "ZalithStyle.h"
 #import "ModrinthService.h"
 #import "CurseForgeService.h"
 #import "ModSourceService.h"
@@ -171,7 +172,7 @@ static NSString *const kVerCell = @"VerCell";
     UIView *statsBar = [[UIView alloc] init];
     statsBar.translatesAutoresizingMaskIntoConstraints = NO;
     statsBar.backgroundColor = ThemeManager.shared.cardBackgroundColor;
-    statsBar.layer.cornerRadius = 8;
+    statsBar.layer.cornerRadius = ZalithCardRadius();
     [content addSubview:statsBar];
 
     _downloadsLabel = [[UILabel alloc] init];
@@ -214,10 +215,9 @@ static NSString *const kVerCell = @"VerCell";
         _mcVersionBtn.translatesAutoresizingMaskIntoConstraints = NO;
         [_mcVersionBtn setTitle:localize(@"Select MC Version", nil) forState:UIControlStateNormal];
         [_mcVersionBtn setTitleColor:ThemeManager.shared.primaryTextColor forState:UIControlStateNormal];
-        _mcVersionBtn.backgroundColor = ThemeManager.shared.cardBackgroundColor;
+        _mcVersionBtn.backgroundColor = ZalithTonalColor();
         _mcVersionBtn.layer.cornerRadius = 8;
-        _mcVersionBtn.layer.borderWidth = 1;
-        _mcVersionBtn.layer.borderColor = ThemeManager.shared.separatorColor.CGColor;
+        _mcVersionBtn.layer.borderWidth = 0;
         _mcVersionBtn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
         _mcVersionBtn.titleEdgeInsets = UIEdgeInsetsMake(0, 12, 0, 0);
         _mcVersionBtn.titleLabel.font = [UIFont systemFontOfSize:14];
@@ -230,9 +230,8 @@ static NSString *const kVerCell = @"VerCell";
     _versionTable.delegate = self;
     _versionTable.dataSource = self;
     _versionTable.backgroundColor = [UIColor clearColor];
-    _versionTable.layer.cornerRadius = 8;
-    _versionTable.layer.borderWidth = 1;
-    _versionTable.layer.borderColor = ThemeManager.shared.separatorColor.CGColor;
+    _versionTable.layer.cornerRadius = ZalithCardRadius();
+    _versionTable.layer.borderWidth = 0;
     _versionTable.rowHeight = 44;
     _versionTable.separatorInset = UIEdgeInsetsMake(0, 12, 0, 12);
     _versionTable.scrollEnabled = YES;
@@ -380,7 +379,6 @@ static NSString *const kVerCell = @"VerCell";
 - (void)updateColors {
     self.view.backgroundColor = ThemeManager.shared.backgroundColor;
     _scrollView.backgroundColor = ThemeManager.shared.backgroundColor;
-    _versionTable.layer.borderColor = ThemeManager.shared.separatorColor.CGColor;
     _downloadBtn.backgroundColor = ThemeManager.shared.accentColor;
     _profileBtn.backgroundColor = ThemeManager.shared.successColor;
 }
@@ -828,7 +826,7 @@ static NSString *const kVerCell = @"VerCell";
         UIView *card = [[UIView alloc] init];
         card.translatesAutoresizingMaskIntoConstraints = NO;
         card.backgroundColor = ThemeManager.shared.cardBackgroundColor;
-        card.layer.cornerRadius = 8;
+        card.layer.cornerRadius = ZalithCardRadius();
         [_depsContainer addSubview:card];
 
         UIImageView *depIcon = [[UIImageView alloc] init];
