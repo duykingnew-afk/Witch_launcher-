@@ -291,7 +291,8 @@ static BOOL WitchCopyLegacyForgeUniversalJar(UZKArchive *archive, NSDictionary *
                                 @"version": ver,
                                 @"mc_version": mcVersion,
                                 @"stable": @YES,
-                                @"download_url": [NSString stringWithFormat:@"https://maven.minecraftforge.net/net/minecraftforge/forge/%@-%@/forge-%@-%@-installer.jar", mcVersion, ver, mcVersion, ver]
+                                @"download_url": [NSString stringWithFormat:@"https://maven.minecraftforge.net/net/minecraftforge/forge/%@-%@/forge-%@-%@-installer.jar", mcVersion, ver, mcVersion, ver],
+                                @"download_url_alt": [NSString stringWithFormat:@"https://maven.minecraftforge.net/net/minecraftforge/forge/%@-%@/forge-%@-%@-%@-installer.jar", mcVersion, ver, mcVersion, ver, mcVersion]
                             }];
                         } else if ([entryObj isKindOfClass:[NSString class]]) {
                             NSString *ver = (NSString *)entryObj;
@@ -300,7 +301,8 @@ static BOOL WitchCopyLegacyForgeUniversalJar(UZKArchive *archive, NSDictionary *
                                 @"version": ver,
                                 @"mc_version": mcVersion,
                                 @"stable": @YES,
-                                @"download_url": [NSString stringWithFormat:@"https://maven.minecraftforge.net/net/minecraftforge/forge/%@-%@/forge-%@-%@-installer.jar", mcVersion, ver, mcVersion, ver]
+                                @"download_url": [NSString stringWithFormat:@"https://maven.minecraftforge.net/net/minecraftforge/forge/%@-%@/forge-%@-%@-installer.jar", mcVersion, ver, mcVersion, ver],
+                                @"download_url_alt": [NSString stringWithFormat:@"https://maven.minecraftforge.net/net/minecraftforge/forge/%@-%@/forge-%@-%@-%@-installer.jar", mcVersion, ver, mcVersion, ver, mcVersion]
                             }];
                         }
                     }
@@ -353,14 +355,29 @@ static BOOL WitchCopyLegacyForgeUniversalJar(UZKArchive *archive, NSDictionary *
 #pragma mark - Download version
 
 - (void)downloadVersionProfile:(NSString *)urlStr named:(NSString *)name {
+    [self downloadVersionProfile:urlStr named:name fallbackURL:nil];
+}
+
+// Old Forge installers (1.7.10-1.12) may be published with the MC version repeated
+// in the file name. If the first URL does not return a JAR, retry with fallbackURL.
+- (void)downloadVersionProfile:(NSString *)urlStr named:(NSString *)name fallbackURL:(NSString *)fallbackURL {
     [_spinner startAnimating];
     _statusLabel.text = [NSString stringWithFormat:@"Downloading %@...", name];
 
     [[NSURLSession.sharedSession dataTaskWithURL:[NSURL URLWithString:urlStr] completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            NSInteger httpCode = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
+            BOOL isJar = data.length > 2 && ((const uint8_t *)data.bytes)[0] == 0x50 && ((const uint8_t *)data.bytes)[1] == 0x4B;
+            BOOL badForgeInstaller = [name containsString:@"forge-"] && !isJar;
+            if (fallbackURL && (error || !data || httpCode >= 400 || badForgeInstaller)) {
+                [self downloadVersionProfile:fallbackURL named:name fallbackURL:nil];
+                return;
+            }
             [self.spinner stopAnimating];
             if (error || !data) {
-                self.statusLabel.text = [NSString stringWithFormat:@"Download failed: %@", error.localizedDescription ?: @"No data"];
+                NSString *reason = error.localizedDescription
+                    ?: (httpCode ? [NSString stringWithFormat:@"HTTP %ld", (long)httpCode] : @"No data");
+                self.statusLabel.text = [NSString stringWithFormat:@"Download failed: %@", reason];
                 return;
             }
 
@@ -582,7 +599,7 @@ static BOOL WitchCopyLegacyForgeUniversalJar(UZKArchive *archive, NSDictionary *
         NSDictionary *lv = _loaderVersions[indexPath.row];
         NSString *urlStr = lv[@"download_url"];
         NSString *name = lv[@"name"];
-        [self downloadVersionProfile:urlStr named:name];
+        [self downloadVersionProfile:urlStr named:name fallbackURL:lv[@"download_url_alt"]];
     } else {
         NSDictionary *v = _filteredVersions[indexPath.row];
         NSString *mcVer = v[@"id"] ?: @"";
