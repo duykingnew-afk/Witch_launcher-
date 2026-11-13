@@ -195,7 +195,9 @@
             @"debug_ipad_ui": @(realUIIdiom == UIUserInterfaceIdiomPad),
             @"debug_auto_correction": @YES,
             @"debug_render_log": @NO,
-            @"mem_sample_log": @YES,
+            // Sampler wakes every 2 s and calls malloc_zone_statistics, which can
+            // contend with the game's allocations. Off by default; enable in Developer settings.
+            @"mem_sample_log": @NO,
             @"debug_server_enabled": @NO,
             @"debug_server_port": @(9090),
             @"debug_server_token": @"",
