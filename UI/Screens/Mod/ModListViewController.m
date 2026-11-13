@@ -422,6 +422,7 @@
 @property (nonatomic) UISearchBar *searchBar;
 @property (nonatomic) UITableView *tableView;
 @property (nonatomic) NSMutableArray *mods;
+@property (nonatomic) NSArray *featuredMods;
 @property (nonatomic) UIActivityIndicatorView *spinner;
 @property (nonatomic) UILabel *emptyLabel;
 @property (nonatomic) UILabel *errorLabel;
@@ -495,6 +496,7 @@
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(versionDidChangeExternal) name:@"VersionDidChangeNotification" object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(installedModsDidChange) name:InstalledModsDidChangeNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateColors) name:AmethystBlurIntensityDidChangeNotification object:nil];
+    [self loadFeaturedMods];
     [self loadModsWithQuery:@"" offset:0];
 }
 
@@ -853,6 +855,8 @@
     if (searchText.length == 0) {
         [self loadModsWithQuery:@"" offset:0];
     }
+    // Mục đề xuất chỉ hiện khi ô tìm kiếm trống.
+    [self.tableView reloadData];
 }
 
 - (void)pullToRefresh {
@@ -864,16 +868,82 @@
     [self loadModsWithQuery:_searchBar.text ?: @"" offset:0];
 }
 
+#pragma mark - Featured mods
+
+// Mod đề xuất trên Modrinth, lấy theo slug. Hiện ở mục riêng phía trên danh
+// sách khi ô tìm kiếm trống và đang dùng Modrinth.
+static NSArray<NSString *> *WitchFeaturedModSlugs(void) {
+    return @[@"distanthorizons", @"essential"];
+}
+
+- (void)loadFeaturedMods {
+    NSArray<NSString *> *slugs = WitchFeaturedModSlugs();
+    NSMutableArray *slots = [NSMutableArray arrayWithCapacity:slugs.count];
+    for (NSUInteger i = 0; i < slugs.count; i++) {
+        [slots addObject:[NSNull null]];
+    }
+
+    dispatch_group_t group = dispatch_group_create();
+    for (NSUInteger i = 0; i < slugs.count; i++) {
+        dispatch_group_enter(group);
+        [ModrinthService.shared loadProjectDetails:slugs[i] completion:^(NSDictionary *project, NSError *error) {
+            // Completion chạy trên main queue, nên ghi vào slots an toàn.
+            if (project[@"id"]) {
+                NSMutableDictionary *m = [project mutableCopy];
+                m[@"project_id"] = project[@"id"];
+                slots[i] = m;
+            }
+            dispatch_group_leave(group);
+        }];
+    }
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+        ModListViewController *strongSelf = weakSelf;
+        if (!strongSelf) return;
+        NSMutableArray *featured = [NSMutableArray array];
+        for (id item in slots) {
+            if ([item isKindOfClass:NSDictionary.class]) {
+                [featured addObject:item];
+            }
+        }
+        strongSelf.featuredMods = featured;
+        [strongSelf.tableView reloadData];
+    });
+}
+
+- (BOOL)showsFeaturedSection {
+    return _featuredMods.count > 0
+        && _searchBar.text.length == 0
+        && ![_selectedSource isEqualToString:@"curseforge"];
+}
+
+- (NSArray *)itemsInSection:(NSInteger)section {
+    if ([self showsFeaturedSection] && section == 0) {
+        return _featuredMods;
+    }
+    return _mods;
+}
+
 #pragma mark - TableView (main mod list)
 
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    return [self showsFeaturedSection] ? 2 : 1;
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    return ([self showsFeaturedSection] && section == 0) ? localize(@"Recommended", nil) : nil;
+}
+
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return _mods.count;
+    return [self itemsInSection:section].count;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    NSDictionary *mod = [self itemsInSection:indexPath.section][indexPath.row];
     ModCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ModCell" forIndexPath:indexPath];
-    cell.installState = [self installStateForMod:_mods[indexPath.row]];
-    [cell configureWithDict:_mods[indexPath.row]];
+    cell.installState = [self installStateForMod:mod];
+    [cell configureWithDict:mod];
     __weak typeof(self) weakSelf = self;
     cell.onVersionTap = ^(NSDictionary *mod, UIButton *sender) {
         [weakSelf showVersionSelectorForMod:mod fromButton:sender];
@@ -887,7 +957,7 @@
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     [HapticManager.shared play:HapticTypeLight];
-    ModDetailViewController *detail = [[ModDetailViewController alloc] initWithMod:_mods[indexPath.row]];
+    ModDetailViewController *detail = [[ModDetailViewController alloc] initWithMod:[self itemsInSection:indexPath.section][indexPath.row]];
     detail.coordinator = self.coordinator;
     [self.navigationController pushViewController:detail animated:YES];
 }
