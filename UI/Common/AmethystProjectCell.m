@@ -1,4 +1,5 @@
 #import "AmethystProjectCell.h"
+#import "ZalithStyle.h"
 #import "ThemeManager.h"
 #import "UIImageView+AFNetworking.h"
 
@@ -8,18 +9,19 @@
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
     if (self) {
         self.selectionStyle = UITableViewCellSelectionStyleNone;
-        self.backgroundColor = ThemeManager.shared.cardBackgroundColor;
-        self.layer.cornerRadius = 8;
-        self.layer.borderWidth = 1;
-        self.layer.borderColor = [ThemeManager.shared.accentColor colorWithAlphaComponent:0.45].CGColor;
-        self.clipsToBounds = YES;
+        // Card Zalith: nền bo 28 nằm trong backgroundView, layoutSubviews chừa khe dọc.
+        self.backgroundColor = UIColor.clearColor;
+        UIView *cardBg = [[UIView alloc] init];
+        cardBg.backgroundColor = ThemeManager.shared.cardBackgroundColor;
+        cardBg.layer.cornerRadius = ZalithCardRadius();
+        cardBg.clipsToBounds = YES;
+        self.backgroundView = cardBg;
 
         _projectIcon = [[UIImageView alloc] init];
         _projectIcon.translatesAutoresizingMaskIntoConstraints = NO;
         _projectIcon.contentMode = UIViewContentModeScaleAspectFill;
         _projectIcon.clipsToBounds = YES;
-        _projectIcon.layer.cornerRadius = 6;
-        _projectIcon.tintColor = ThemeManager.shared.secondaryTextColor;
+                _projectIcon.tintColor = ThemeManager.shared.secondaryTextColor;
         [self.contentView addSubview:_projectIcon];
 
         _titleLabel = [[UILabel alloc] init];
@@ -57,9 +59,15 @@
     return self;
 }
 
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    // Khe 6 pt trên và dưới giữa các card, như ModCell.
+    self.backgroundView.frame = CGRectInset(self.bounds, 0, 6);
+    _projectIcon.layer.cornerRadius = ZalithIconRadius(_projectIcon.bounds.size.width);
+}
+
 - (void)updateTheme {
-    self.backgroundColor = ThemeManager.shared.cardBackgroundColor;
-    self.layer.borderColor = [ThemeManager.shared.accentColor colorWithAlphaComponent:0.45].CGColor;
+    self.backgroundView.backgroundColor = ThemeManager.shared.cardBackgroundColor;
     _titleLabel.textColor = ThemeManager.shared.primaryTextColor;
     _subtitleLabel.textColor = ThemeManager.shared.secondaryTextColor;
     _projectIcon.tintColor = ThemeManager.shared.secondaryTextColor;

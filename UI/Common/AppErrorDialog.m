@@ -1,4 +1,5 @@
 #import "AppErrorDialog.h"
+#import "ZalithStyle.h"
 #import "ThemeManager.h"
 #import "AmethystBlurView.h"
 #import "HapticManager.h"
@@ -129,10 +130,9 @@
         UIView *card = [[UIView alloc] init];
         card.translatesAutoresizingMaskIntoConstraints = NO;
         card.backgroundColor = [theme.cardBackgroundColor colorWithAlphaComponent:0.92];
-        card.layer.cornerRadius = 16;
-        card.layer.borderWidth = 1;
-        card.layer.borderColor = [accent colorWithAlphaComponent:0.45].CGColor;
-        card.clipsToBounds = YES;
+        card.layer.cornerRadius = ZalithCardRadius();
+        card.layer.borderWidth = 0;
+                card.clipsToBounds = YES;
         [overlay addSubview:card];
 
         UIImageView *iconView = [[UIImageView alloc] init];

@@ -1,4 +1,5 @@
 #import "AppSheet.h"
+#import "ZalithStyle.h"
 #import "ThemeManager.h"
 #import "AmethystBlurView.h"
 #import "HapticManager.h"
@@ -55,12 +56,11 @@ typedef NS_ENUM(NSUInteger, AppSheetMode) {
     _cardView = [[UIView alloc] init];
     _cardView.translatesAutoresizingMaskIntoConstraints = NO;
     _cardView.backgroundColor = [theme.cardBackgroundColor colorWithAlphaComponent:0.96];
-    _cardView.layer.cornerRadius = 22;
+    _cardView.layer.cornerRadius = ZalithCardRadius();
     _cardView.layer.maskedCorners = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner;
     _cardView.clipsToBounds = YES;
-    _cardView.layer.borderWidth = 1;
-    _cardView.layer.borderColor = [theme.accentColor colorWithAlphaComponent:0.30].CGColor;
-    [self.view addSubview:_cardView];
+    _cardView.layer.borderWidth = 0;
+        [self.view addSubview:_cardView];
     [AmethystBlurView installInView:_cardView];
 
     UIView *grabber = [[UIView alloc] init];
@@ -179,7 +179,7 @@ typedef NS_ENUM(NSUInteger, AppSheetMode) {
         _textField.font = [UIFont systemFontOfSize:16];
         _textField.textColor = theme.primaryTextColor;
         _textField.backgroundColor = [theme.separatorColor colorWithAlphaComponent:0.35];
-        _textField.layer.cornerRadius = 12;
+        _textField.layer.cornerRadius = ZalithFieldRadius();
         _textField.leftView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 12, 0)];
         _textField.leftViewMode = UITextFieldViewModeAlways;
         _textField.placeholder = _placeholder;
@@ -210,7 +210,7 @@ typedef NS_ENUM(NSUInteger, AppSheetMode) {
             _textField2.font = [UIFont systemFontOfSize:16];
             _textField2.textColor = theme.primaryTextColor;
             _textField2.backgroundColor = [theme.separatorColor colorWithAlphaComponent:0.35];
-            _textField2.layer.cornerRadius = 12;
+            _textField2.layer.cornerRadius = ZalithFieldRadius();
             _textField2.leftView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 12, 0)];
             _textField2.leftViewMode = UITextFieldViewModeAlways;
             _textField2.placeholder = _placeholder2;
