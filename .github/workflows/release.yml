@@ -4,9 +4,10 @@ permissions:
   contents: write
   actions: write
 
+# Automatic push trigger disabled: promotion needs a pre-release built on a
+# macOS runner, which this repo does not have yet. Run manually with
+# workflow_dispatch once a pre-release exists.
 on:
-  push:
-    branches: ['main']
   workflow_dispatch:
 
 concurrency:
