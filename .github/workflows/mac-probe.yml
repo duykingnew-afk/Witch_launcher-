@@ -1,0 +1,15 @@
+name: Mac runner probe
+
+on:
+  push:
+    branches: ['probe-mac']
+
+jobs:
+  latest:
+    runs-on: macos-latest
+    steps:
+      - run: sw_vers && uname -m && xcodebuild -version || true
+  m14:
+    runs-on: macos-14
+    steps:
+      - run: sw_vers && uname -m && xcodebuild -version || true
