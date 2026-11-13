@@ -1810,7 +1810,8 @@
 "music.reset_track" = "Dùng nhạc mặc định";
 "music.track_none" = "Chưa có file nhạc";
 "music.track_default" = "Nhạc đi kèm";
-"music.footer" = "Phát nhạc lặp trong launcher. Tự tạm dừng khi đang chơi game hoặc khi ứng dụng ở nền. Hỗ trợ: mp3, m4a, wav, aac, caf, aiff.";
+"music.footer" = "Khi có video nền, nhạc lấy âm thanh của video đó. Không có video thì phát file bạn chọn. Nhạc lặp lại, tạm dừng khi chơi game hoặc khi app ở nền.";
+"music.track_video" = "Âm thanh video nền";
 "music.none_hint" = "Chưa có file nhạc. Vào Cài đặt → Nhạc nền để chọn file.";
 "music.error.unsupported" = "Định dạng file này không được hỗ trợ. Hãy dùng mp3, m4a, wav, aac, caf hoặc aiff.";
 "music.error.import" = "Không thể nhập file nhạc này.";

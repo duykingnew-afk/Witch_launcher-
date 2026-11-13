@@ -14,6 +14,7 @@
 #import "VersionDirectoryManager.h"
 #import "authenticator/BaseAuthenticator.h"
 #import "utils.h"
+#import "BackgroundMusicManager.h"
 #import <AVFoundation/AVFoundation.h>
 #import <QuartzCore/QuartzCore.h>
 
@@ -516,10 +517,13 @@
     _backgroundVideoPlayer.muted = YES;
     _backgroundVideoPlayer.actionAtItemEnd = AVPlayerActionAtItemEndNone;
     _backgroundVideoLayer.player = _backgroundVideoPlayer;
+    // The video's soundtrack is the launcher music; the manager sets mute per the toggle.
+    [BackgroundMusicManager.shared setVideoPlayer:_backgroundVideoPlayer];
     [_backgroundVideoPlayer play];
 }
 
 - (void)stopBackgroundVideo {
+    [BackgroundMusicManager.shared setVideoPlayer:nil];
     [_backgroundVideoPlayer pause];
     _backgroundVideoLayer.player = nil;
     _backgroundVideoPlayer = nil;

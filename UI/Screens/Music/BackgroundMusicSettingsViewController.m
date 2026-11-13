@@ -117,7 +117,9 @@ typedef NS_ENUM(NSInteger, BGMTrackRow) {
         cell.detailTextLabel.font = [UIFont systemFontOfSize:14];
         cell.detailTextLabel.textColor = theme.secondaryTextColor;
         cell.detailTextLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
-        if (music.usingCustomTrack) {
+        if (music.usingVideoAudio) {
+            cell.detailTextLabel.text = localize(@"music.track_video", nil);
+        } else if (music.usingCustomTrack) {
             cell.detailTextLabel.text = music.trackName;
         } else if (music.hasTrack) {
             cell.detailTextLabel.text = localize(@"music.track_default", nil);

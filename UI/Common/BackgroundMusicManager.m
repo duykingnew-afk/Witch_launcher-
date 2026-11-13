@@ -26,6 +26,8 @@ static NSURL *BGMCustomDirectory(void) {
 @interface BackgroundMusicManager ()
 @property (nonatomic) AVAudioPlayer *player;
 @property (nonatomic, nullable) NSURL *playerURL;
+// Owned by the root view controller; weak so a replaced video is never kept alive here.
+@property (nonatomic, weak, nullable) AVPlayer *videoPlayer;
 @property (nonatomic) BOOL gameRunning;
 @property (nonatomic) BOOL appInForeground;
 @end
@@ -69,11 +71,24 @@ static NSURL *BGMCustomDirectory(void) {
 }
 
 - (BOOL)isPlaying {
+    if (self.usingVideoAudio) return !self.videoPlayer.muted && self.videoPlayer.rate > 0;
     return self.player.isPlaying;
 }
 
 - (BOOL)hasTrack {
-    return [self currentTrackURL] != nil;
+    return self.usingVideoAudio || [self currentTrackURL] != nil;
+}
+
+- (BOOL)usingVideoAudio {
+    return self.videoPlayer != nil;
+}
+
+- (void)setVideoPlayer:(AVPlayer *)player {
+    if (self.videoPlayer == player) return;
+    // The outgoing player must not keep sounding after it leaves the launcher.
+    self.videoPlayer.muted = YES;
+    self.videoPlayer = player;
+    [self reconcile];
 }
 
 - (BOOL)usingCustomTrack {
@@ -114,6 +129,19 @@ static NSURL *BGMCustomDirectory(void) {
 #pragma mark - Playback
 
 - (void)reconcile {
+    if (self.videoPlayer) {
+        // The background video's soundtrack is the music; the track player stays idle.
+        BOOL audible = self.enabled && self.appInForeground && !self.gameRunning;
+        [self dropLoadedPlayer];
+        self.videoPlayer.muted = !audible;
+        if (audible) [self activateAudioSession];
+    } else {
+        [self reconcileTrack];
+    }
+    [NSNotificationCenter.defaultCenter postNotificationName:BackgroundMusicDidChangeNotification object:self];
+}
+
+- (void)reconcileTrack {
     NSURL *trackURL = [self currentTrackURL];
     if (!self.enabled || trackURL == nil) {
         [self.player stop];
@@ -130,7 +158,6 @@ static NSURL *BGMCustomDirectory(void) {
             [self.player play];
         }
     }
-    [NSNotificationCenter.defaultCenter postNotificationName:BackgroundMusicDidChangeNotification object:self];
 }
 
 - (void)loadTrack:(NSURL *)url {

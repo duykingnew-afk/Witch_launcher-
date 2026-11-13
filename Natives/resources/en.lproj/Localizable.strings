@@ -1815,7 +1815,8 @@
 "music.reset_track" = "Use default music";
 "music.track_none" = "No music file";
 "music.track_default" = "Bundled track";
-"music.footer" = "Loops music in the launcher. It pauses while a game is running and when the app is in the background. Supported formats: mp3, m4a, wav, aac, caf, aiff.";
+"music.footer" = "Music follows the sound of the background video when one is set. Without a video it plays the file you choose. It loops, and pauses during a game or when the app is in the background.";
+"music.track_video" = "Background video sound";
 "music.none_hint" = "No music file yet. Open Settings → Background music to choose one.";
 "music.error.unsupported" = "This file type is not supported. Use mp3, m4a, wav, aac, caf or aiff.";
 "music.error.import" = "Could not import this music file.";
