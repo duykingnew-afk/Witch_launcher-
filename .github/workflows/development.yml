@@ -16,7 +16,8 @@ concurrency:
 jobs:
   build:
     name: Development build
-    runs-on: macos-14
+    # macos-14 is not available to this repo; macos-latest (arm64, Xcode 26.x) is.
+    runs-on: macos-latest
     timeout-minutes: 360
     steps:
       - name: Checkout repository
@@ -330,7 +331,7 @@ jobs:
             --run-url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --version "${{ steps.version.outputs.APP_VERSION }}" \
             --pusher "${{ github.event.pusher.name }}" \
-            --runner "macos-14" \
+            --runner "macos-latest" \
             --artifacts-dir ./downloaded \
             --out RELEASE_NOTES.md
           echo "--- RELEASE_NOTES.md (head) ---"
