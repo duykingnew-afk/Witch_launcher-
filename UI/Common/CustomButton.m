@@ -7,7 +7,8 @@
     self = [super initWithFrame:CGRectZero];
     if (self) {
         _buttonStyle = style;
-        _cornerRadius = 10.0;
+        // Âm nghĩa là dạng viên (bo bằng nửa chiều cao), kiểu nút của Zalith.
+        _cornerRadius = -1.0;
         [self setTitle:title forState:UIControlStateNormal];
         [self setup];
         [self updateAppearance];
@@ -46,8 +47,15 @@
             [self setTitleColor:theme.accentColor forState:UIControlStateNormal];
             break;
     }
-    self.layer.cornerRadius = self.cornerRadius;
+    self.layer.cornerRadius = self.cornerRadius < 0 ? self.bounds.size.height / 2 : self.cornerRadius;
     self.clipsToBounds = YES;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    if (self.cornerRadius < 0) {
+        self.layer.cornerRadius = self.bounds.size.height / 2;
+    }
 }
 
 - (void)didTouchDown {
