@@ -27,6 +27,32 @@
 
 static NSArray *kLoaders;
 
+// Copies the universal jar of a legacy Forge installer (no "processors") into
+// <gameDir>/libraries at its Maven path. Returns NO when the profile is not in
+// the expected shape, so the caller falls back to running the installer JVM.
+static BOOL WitchCopyLegacyForgeUniversalJar(UZKArchive *archive, NSDictionary *install, NSString *gameDir) {
+    NSString *filePath = install[@"filePath"];
+    NSString *coord = install[@"path"];
+    if (![filePath isKindOfClass:NSString.class] || ![coord isKindOfClass:NSString.class]) return NO;
+
+    // group:artifact:version[:classifier]
+    NSArray<NSString *> *parts = [coord componentsSeparatedByString:@":"];
+    if (parts.count < 3) return NO;
+    NSString *classifier = parts.count >= 4 ? [@"-" stringByAppendingString:parts[3]] : @"";
+    NSString *fileName = [NSString stringWithFormat:@"%@-%@%@.jar", parts[1], parts[2], classifier];
+    NSString *relPath = [NSString stringWithFormat:@"%@/%@/%@/%@",
+                         [parts[0] stringByReplacingOccurrencesOfString:@"." withString:@"/"],
+                         parts[1], parts[2], fileName];
+
+    NSData *jar = [archive extractDataFromFile:filePath error:nil];
+    if (!jar) return NO;
+
+    NSString *dest = [[gameDir stringByAppendingPathComponent:@"libraries"] stringByAppendingPathComponent:relPath];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dest.stringByDeletingLastPathComponent
+                              withIntermediateDirectories:YES attributes:nil error:nil];
+    return [jar writeToFile:dest atomically:YES];
+}
+
 @implementation VersionBrowserViewController
 
 + (void)initialize {
@@ -343,7 +369,11 @@ static NSArray *kLoaders;
 
             // Forge/NeoForge entries download an installer JAR, not a version profile
             // JSON; anything else (vanilla/fabric/quilt) is a plain profile JSON.
-            BOOL looksLikeInstaller = [name hasPrefix:@"neoforge-"] || [name containsString:@"-forge-"];
+            // Forge 1.5-1.12 entries are named "forge-<mc>-<build>" (no leading dash),
+            // so match on "forge-" to keep a non-JAR reply from being saved as a profile.
+            BOOL looksLikeInstaller = [name containsString:@"forge-"];
+            // Legacy Forge installers are installed natively (see below), not via --installClient.
+            BOOL legacyNative = NO;
 
             // For Forge/NeoForge installers we keep the installer jar around and run it
             // headless (--installClient) in the embedded JVM after writing the profile,
@@ -366,6 +396,17 @@ static NSArray *kLoaders;
                         NSDictionary *profileJson = [NSJSONSerialization JSONObjectWithData:profileData options:0 error:nil];
                         if ([profileJson isKindOfClass:[NSDictionary class]]) {
                             // Forge/NeoForge install_profile.json
+                            // Legacy (<=1.12.2, no processors): copy the universal jar ourselves.
+                            // Running these installers with --installClient fails on 1.7.10
+                            // ("'installClient' is not a recognized option").
+                            NSDictionary *legacyInstall = profileJson[@"install"];
+                            if (profileJson[@"processors"] == nil &&
+                                [legacyInstall isKindOfClass:[NSDictionary class]] &&
+                                legacyInstall[@"filePath"] && legacyInstall[@"path"]) {
+                                NSString *gameDir = [NSString stringWithFormat:@"%s/instances/%@",
+                                    getenv("POJAV_HOME") ?: "", VersionDirectoryManager.shared.currentInstance ?: @"default"];
+                                legacyNative = WitchCopyLegacyForgeUniversalJar(archive, legacyInstall, gameDir);
+                            }
                             // Legacy (<=1.12.2): versionInfo dictionary
                             NSDictionary *versionInfo = profileJson[@"versionInfo"];
                             if ([versionInfo isKindOfClass:[NSDictionary class]]) {
@@ -412,7 +453,11 @@ static NSArray *kLoaders;
                     }
                 }
 
-                if (installerVersionId.length > 0) {
+                if (legacyNative && installerVersionId.length > 0) {
+                    // Native install: the profile path below writes versions/<id>/<id>.json,
+                    // overwriting a previous install of the same build.
+                    finalName = installerVersionId;
+                } else if (installerVersionId.length > 0) {
                     // Keep the installer for the headless install run below
                     NSString *installersDir = [NSString stringWithFormat:@"%s/installers", getenv("POJAV_HOME") ?: ""];
                     if (installersDir.length > [@"/installers" length]) {
@@ -466,9 +511,12 @@ static NSArray *kLoaders;
             }
 
             NSString *versionDir = [mgr versionPathForVersion:finalName];
+            // Suffix the base name only. The old loop appended to finalName each pass,
+            // which produced names like "...-1-2-3-4-5-6-7-8-9-10".
+            NSString *baseName = finalName;
             int counter = 1;
-            while ([[NSFileManager defaultManager] fileExistsAtPath:versionDir]) {
-                finalName = [NSString stringWithFormat:@"%@-%d", finalName, counter++];
+            while (!legacyNative && [[NSFileManager defaultManager] fileExistsAtPath:versionDir]) {
+                finalName = [NSString stringWithFormat:@"%@-%d", baseName, counter++];
                 versionDir = [mgr versionPathForVersion:finalName];
             }
             [[NSFileManager defaultManager] createDirectoryAtPath:versionDir withIntermediateDirectories:YES attributes:nil error:nil];
