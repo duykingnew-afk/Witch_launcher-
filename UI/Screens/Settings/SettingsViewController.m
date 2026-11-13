@@ -32,44 +32,6 @@
 @property (nonatomic, strong) NSArray *searchResults; // array of @{@"tab":title, @"tabIndex":@, @"item":dict, @"row":@}
 @end
 
-// Nền card theo vị trí trong nhóm, giống card cài đặt của Zalith 2: góc ngoài
-// ở đầu và cuối nhóm bo 28 pt, góc trong giữa nhóm bo 4 pt. Có khe 2 pt giữa
-// các hàng để các góc trong nhìn thấy được.
-@interface ZalithGroupCellBackgroundView : UIView
-@property (nonatomic) CGFloat topRadius;
-@property (nonatomic) CGFloat bottomRadius;
-@end
-
-@implementation ZalithGroupCellBackgroundView
-
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    CGRect r = CGRectInset(self.bounds, 0, 1);
-    CGFloat t = MIN(self.topRadius, CGRectGetHeight(r) / 2);
-    CGFloat b = MIN(self.bottomRadius, CGRectGetHeight(r) / 2);
-    CGFloat minX = CGRectGetMinX(r), maxX = CGRectGetMaxX(r);
-    CGFloat minY = CGRectGetMinY(r), maxY = CGRectGetMaxY(r);
-
-    UIBezierPath *path = [UIBezierPath bezierPath];
-    [path moveToPoint:CGPointMake(minX + t, minY)];
-    [path addLineToPoint:CGPointMake(maxX - t, minY)];
-    [path addArcWithCenter:CGPointMake(maxX - t, minY + t) radius:t startAngle:-M_PI_2 endAngle:0 clockwise:YES];
-    [path addLineToPoint:CGPointMake(maxX, maxY - b)];
-    [path addArcWithCenter:CGPointMake(maxX - b, maxY - b) radius:b startAngle:0 endAngle:M_PI_2 clockwise:YES];
-    [path addLineToPoint:CGPointMake(minX + b, maxY)];
-    [path addArcWithCenter:CGPointMake(minX + b, maxY - b) radius:b startAngle:M_PI_2 endAngle:M_PI clockwise:YES];
-    [path addLineToPoint:CGPointMake(minX, minY + t)];
-    [path addArcWithCenter:CGPointMake(minX + t, minY + t) radius:t startAngle:M_PI endAngle:3 * M_PI_2 clockwise:YES];
-    [path closePath];
-
-    CAShapeLayer *mask = [CAShapeLayer layer];
-    mask.frame = self.bounds;
-    mask.path = path.CGPath;
-    self.layer.mask = mask;
-}
-
-@end
-
 @implementation SettingsViewController
 
 - (void)viewDidLoad {
@@ -876,24 +838,6 @@
         return 64;
     }
     return 48;
-}
-
-- (void)tableView:(UITableView *)tableView willDisplayCell:(UITableViewCell *)cell forRowAtIndexPath:(NSIndexPath *)indexPath {
-    if (tableView == _searchResultsTable) return;
-    NSDictionary *item = [self itemAtIndexPath:indexPath inTable:tableView];
-    if ([item[@"type"] isEqualToString:@"label"]) {
-        cell.backgroundView = nil;
-        return;
-    }
-    NSInteger rows = [tableView numberOfRowsInSection:indexPath.section];
-    ZalithGroupCellBackgroundView *bg = [cell.backgroundView isKindOfClass:ZalithGroupCellBackgroundView.class]
-        ? (ZalithGroupCellBackgroundView *)cell.backgroundView
-        : [[ZalithGroupCellBackgroundView alloc] init];
-    bg.backgroundColor = ThemeManager.shared.cardBackgroundColor;
-    bg.topRadius = indexPath.row == 0 ? 28.0 : 4.0;
-    bg.bottomRadius = indexPath.row == rows - 1 ? 28.0 : 4.0;
-    cell.backgroundView = bg;
-    cell.backgroundColor = UIColor.clearColor;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
