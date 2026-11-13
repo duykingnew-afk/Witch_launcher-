@@ -26,6 +26,7 @@
 #import "TrackedTextField.h"
 #import "UIKit+hook.h"
 #import "ios_uikit_bridge.h"
+#import "BackgroundMusicManager.h"
 
 #import "touchcontroller_jni_bridge.h"
 #import "touchcontroller_launcher.h"
@@ -454,6 +455,8 @@ static GameSurfaceView* pojavWindow;
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    // Launcher music stays silent while the game owns the audio session.
+    [BackgroundMusicManager.shared setGameRunning:YES];
     AmethystSetSystemPointerHidden(self.view, isGrabbing || virtualMouseEnabled);
     [self setNeedsUpdateOfPrefersPointerLocked];
 }

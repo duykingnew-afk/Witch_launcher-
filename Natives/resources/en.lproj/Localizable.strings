@@ -1807,3 +1807,17 @@
 "Uploaded to %@" = "Uploaded to %@";
 "Uploading to %@..." = "Uploading to %@...";
 "WebDAV upload failed." = "WebDAV upload failed.";
+
+/* Background music */
+"music.title" = "Background music";
+"music.enabled" = "Play background music";
+"music.choose_track" = "Choose music file…";
+"music.reset_track" = "Use default music";
+"music.track_none" = "No music file";
+"music.track_default" = "Bundled track";
+"music.footer" = "Loops music in the launcher. It pauses while a game is running and when the app is in the background. Supported formats: mp3, m4a, wav, aac, caf, aiff.";
+"music.none_hint" = "No music file yet. Open Settings → Background music to choose one.";
+"music.error.unsupported" = "This file type is not supported. Use mp3, m4a, wav, aac, caf or aiff.";
+"music.error.import" = "Could not import this music file.";
+"music.toggle.on" = "Background music on";
+"music.toggle.off" = "Background music off";

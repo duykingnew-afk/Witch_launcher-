@@ -5,6 +5,8 @@
 #import "AmethystBlurView.h"
 #import "UIView+LiquidGlass.h"
 #import "DownloadManager.h"
+#import "BackgroundMusicManager.h"
+#import "ios_uikit_bridge.h"
 #import <objc/runtime.h>
 
 @interface TopBarView ()
@@ -12,6 +14,7 @@
 @property (nonatomic) UILabel *timeLabel;
 @property (nonatomic) UIStackView *progressStack;
 @property (nonatomic) UIButton *fileManagerButton;
+@property (nonatomic) UIButton *musicButton;
 @property (nonatomic) UIButton *settingsButton;
 @property (nonatomic) UIButton *downloadHubButton;
 @property (nonatomic) UIButton *downloadInfoButton;
@@ -57,6 +60,13 @@
     [_fileManagerButton addTarget:self action:@selector(fileTapped) forControlEvents:UIControlEventTouchUpInside];
     [self addSubview:_fileManagerButton];
 
+    // Quick on/off for the launcher background music (Settings → Background music has the rest).
+    _musicButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    _musicButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [_musicButton addTarget:self action:@selector(musicTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:_musicButton];
+    [self updateMusicButton];
+
     _settingsButton = [UIButton buttonWithType:UIButtonTypeSystem];
     _settingsButton.translatesAutoresizingMaskIntoConstraints = NO;
     [_settingsButton setImage:[UIImage systemImageNamed:@"gearshape"] forState:UIControlStateNormal];
@@ -93,7 +103,12 @@
         [_settingsButton.widthAnchor constraintEqualToConstant:28],
         [_settingsButton.heightAnchor constraintEqualToConstant:28],
 
-        [_fileManagerButton.trailingAnchor constraintEqualToAnchor:_settingsButton.leadingAnchor constant:-6],
+        [_musicButton.trailingAnchor constraintEqualToAnchor:_settingsButton.leadingAnchor constant:-6],
+        [_musicButton.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+        [_musicButton.widthAnchor constraintEqualToConstant:28],
+        [_musicButton.heightAnchor constraintEqualToConstant:28],
+
+        [_fileManagerButton.trailingAnchor constraintEqualToAnchor:_musicButton.leadingAnchor constant:-6],
         [_fileManagerButton.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
         [_fileManagerButton.widthAnchor constraintEqualToConstant:28],
         [_fileManagerButton.heightAnchor constraintEqualToConstant:28],
@@ -120,8 +135,29 @@
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateColors) name:AmethystBlurIntensityDidChangeNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateColors) name:LiquidGlassDidChangeNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(rebuildProgressRows) name:DownloadTasksDidChangeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(updateMusicButton) name:BackgroundMusicDidChangeNotification object:nil];
         [self updateColors];
         [self rebuildProgressRows];
+}
+
+#pragma mark - Background music
+
+- (void)updateMusicButton {
+    BackgroundMusicManager *music = BackgroundMusicManager.shared;
+    BOOL on = music.enabled;
+    NSString *symbol = on ? @"speaker.wave.2.fill" : @"speaker.slash.fill";
+    [_musicButton setImage:[UIImage systemImageNamed:symbol] forState:UIControlStateNormal];
+    _musicButton.tintColor = on ? ThemeManager.shared.accentColor : ThemeManager.shared.secondaryTextColor;
+    _musicButton.accessibilityLabel = localize(on ? @"music.toggle.on" : @"music.toggle.off", nil);
+}
+
+- (void)musicTapped {
+    BackgroundMusicManager *music = BackgroundMusicManager.shared;
+    BOOL turningOn = !music.enabled;
+    [music setEnabled:turningOn];
+    if (turningOn && !music.hasTrack) {
+        showDialog(localize(@"music.title", nil), localize(@"music.none_hint", nil));
+    }
 }
 
 #pragma mark - Download progress hub
@@ -271,6 +307,7 @@
     _fileManagerButton.tintColor = theme.accentColor;
     _settingsButton.tintColor = theme.accentColor;
     _downloadHubButton.tintColor = theme.accentColor;
+    [self updateMusicButton];
 }
 
 - (void)updateJITStatus:(BOOL)enabled {

@@ -342,6 +342,7 @@ egl_bridge.m
 
    # UI
    ../UI/Common/ThemeManager.m
+   ../UI/Common/BackgroundMusicManager.m
    ../UI/Common/FontManager.m
    ../UI/Common/MarkdownRenderer.m
    ../UI/Common/MMMarkdown/MMDocument.m
@@ -432,6 +433,7 @@ egl_bridge.m
    ../UI/Screens/Account/Skin3DView.m
    ../UI/Screens/Account/SkinTextureManager.m
    ../UI/Screens/Perf/PerfSettingsViewController.m
+   ../UI/Screens/Music/BackgroundMusicSettingsViewController.m
    ../UI/Screens/Perf/PerfHistoryViewController.m
    ../UI/Screens/Perf/PerfChartViewController.m
    ../UI/Screens/Perf/PerfChartRenderer.m

@@ -12,6 +12,7 @@
 #import "WitchPluginRuntime.h"
 #import "WitchRootHost.h"
 #import "MemSampler.h"
+#import "BackgroundMusicManager.h"
 
 #include <objc/runtime.h>
 #include "ios_uikit_bridge.h"
@@ -180,6 +181,8 @@ void UIKit_returnToSplitView() {
     // queue and stdout logging alive on the launcher screen.
     WitchMemSamplerStop();
     dispatch_async(dispatch_get_main_queue(), ^{
+        // Launcher is back on screen: launcher music may resume (main thread: it updates the top bar).
+        [BackgroundMusicManager.shared setGameRunning:NO];
         UIWindow *window = UIWindow.mainWindow;
 
         [UIView animateWithDuration:0.2 animations:^{

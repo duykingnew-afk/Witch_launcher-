@@ -137,6 +137,7 @@ static NSString *WitchSplashBundleMediaKind(void) {
             @{@"type": @"navigate", @"label": localize(@"settings.launcher_update", nil), @"vc": @"LauncherUpdateViewController"},
             @{@"type": @"navigate", @"label": localize(@"settings.runtime_download", nil), @"vc": @"RuntimeDownloadViewController"},
             @{@"type": @"navigate", @"label": localize(@"settings.storage", nil), @"vc": @"StorageManagerViewController"},
+            @{@"type": @"navigate", @"label": localize(@"music.title", nil), @"vc": @"BackgroundMusicSettingsViewController"},
             @{@"type": @"navigate", @"label": localize(@"Backup & Restore", nil), @"vc": @"BackupSettingsViewController"},
             @{@"type": @"navigate", @"label": localize(@"Plugins", nil), @"vc": @"PluginsViewController"},
             @{@"type": @"navigate", @"label": localize(@"perf.title", nil), @"vc": @"PerfSettingsViewController"},

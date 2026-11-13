@@ -1802,3 +1802,17 @@
 "Uploaded to %@" = "Đã tải lên %@";
 "Uploading to %@..." = "Đang tải lên %@...";
 "WebDAV upload failed." = "Tải lên WebDAV thất bại.";
+
+/* Nhạc nền */
+"music.title" = "Nhạc nền";
+"music.enabled" = "Phát nhạc nền";
+"music.choose_track" = "Chọn file nhạc…";
+"music.reset_track" = "Dùng nhạc mặc định";
+"music.track_none" = "Chưa có file nhạc";
+"music.track_default" = "Nhạc đi kèm";
+"music.footer" = "Phát nhạc lặp trong launcher. Tự tạm dừng khi đang chơi game hoặc khi ứng dụng ở nền. Hỗ trợ: mp3, m4a, wav, aac, caf, aiff.";
+"music.none_hint" = "Chưa có file nhạc. Vào Cài đặt → Nhạc nền để chọn file.";
+"music.error.unsupported" = "Định dạng file này không được hỗ trợ. Hãy dùng mp3, m4a, wav, aac, caf hoặc aiff.";
+"music.error.import" = "Không thể nhập file nhạc này.";
+"music.toggle.on" = "Nhạc nền: đang bật";
+"music.toggle.off" = "Nhạc nền: đang tắt";
