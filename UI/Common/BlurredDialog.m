@@ -2,6 +2,7 @@
 #import "ZalithStyle.h"
 #import "ThemeManager.h"
 #import "AmethystBlurView.h"
+#import "UIView+LiquidGlass.h"
 
 @implementation BlurredDialog
 
@@ -34,6 +35,7 @@
     card.layer.borderWidth = 0;
         card.clipsToBounds = YES;
     [overlay addSubview:card];
+    [card lg_enableLiquidGlassWithTint:nil cornerRadius:16.0 maskedCorners:kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner | kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner];
 
     UILabel *titleLabel = [[UILabel alloc] init];
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;

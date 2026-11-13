@@ -23,8 +23,9 @@ BOOL getEntitlementValue(NSString *key) {
     if (value == nil) {
         return NO;
     }
+    BOOL result = ![(__bridge id)value isKindOfClass:NSNumber.class] || [(__bridge id)value boolValue];
     CFRelease(value);
-    return ![(__bridge id)value isKindOfClass:NSNumber.class] || [(__bridge id)value boolValue];
+    return result;
 }
 
 BOOL processIsCurrentlyDebugged(void) {
@@ -379,6 +380,18 @@ void JIT26PrepareRegionForPatching(void *addr, size_t size) {
        "brk #0xf00d \n"
        "ret");
 }
+__attribute__((noinline,optnone,naked))
+void JIT26OfferMirrorRegion(void *addr, size_t size) {
+   asm("mov x16, #5 \n"
+       "brk #0xf00d \n"
+       "ret");
+}
+__attribute__((noinline,optnone,naked))
+void* JIT26VerifyMirrorOffer(void *sentinel) {
+   asm("mov x16, #6 \n"
+       "brk #0xf00d \n"
+       "ret");
+}
 void JIT26SendJITScript(NSString* script) {
     NSCAssert(script, @"Script must not be nil");
     // script.length counts UTF-16 units; the debugger reads raw bytes, so use
@@ -423,6 +436,27 @@ NSString* WitchHardwareMachine(void) {
         return @"unknown";
     }
     return @(buffer);
+}
+
+NSString* WitchChipName(void) {
+    NSUInteger (*MGGetSInt64Answer)(NSString *) = dlsym(RTLD_DEFAULT, "MGGetSint64Answer");
+    if (MGGetSInt64Answer == NULL) return nil;
+
+    long long chip = (long long)MGGetSInt64Answer(@"ChipID");
+    switch (chip) {
+        case 0x8010: return @"A10 Fusion";
+        case 0x8011: return @"A10X Fusion";
+        case 0x8015: return @"A11 Bionic";
+        case 0x8020: return @"A12 Bionic";
+        case 0x8027: return @"A12X / A12Z";
+        case 0x8030: return @"A13 Bionic";
+        case 0x8101: return @"A14 Bionic";
+        case 0x8103: return @"M1";
+        case 0x8110: return @"A15 Bionic";
+        case 0x8112: return @"A16 Bionic";
+        case 0x8120: return @"A17 Pro";
+        default: return [NSString stringWithFormat:@"Unknown (0x%llx)", chip];
+    }
 }
 
 BOOL DeviceCanCreateRXMap(void) {
@@ -631,4 +665,79 @@ BOOL DeviceNeedsDebugJITMapping(void) {
 
 BOOL JIT26IsLikelyDebuggerKeepAttached(void) {
     return processIsCurrentlyDebugged();
+}
+
+#pragma mark - Hidden home (.amethyst)
+
+static NSString *amethyst_hidden_root(void) {
+    const char *home = getenv("POJAV_HOME");
+    if (!home) return nil;
+    NSString *root = [@(home) stringByAppendingPathComponent:@".amethyst"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:root withIntermediateDirectories:YES attributes:nil error:nil];
+    return root;
+}
+
+NSString *amethyst_hidden_path(NSString *subpath) {
+    NSString *root = amethyst_hidden_root();
+    if (!root) return nil;
+    if (subpath.length == 0) return root;
+    return [root stringByAppendingPathComponent:subpath];
+}
+
+NSString *amethyst_hidden_dir(NSString *subpath) {
+    NSString *path = amethyst_hidden_path(subpath);
+    if (path.length > 0) {
+        [[NSFileManager defaultManager] createDirectoryAtPath:path withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    return path;
+}
+
+static void amethyst_move_legacy_item(NSString *root, NSString *hidden, NSString *name) {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *from = [root stringByAppendingPathComponent:name];
+    NSString *to = [hidden stringByAppendingPathComponent:name];
+    if (![fm fileExistsAtPath:from]) return;
+    if ([fm fileExistsAtPath:to]) return; // new location already populated
+    NSError *error = nil;
+    if (![fm moveItemAtPath:from toPath:to error:&error]) {
+        NSLog(@"[AmethystHome] migrate %@ failed: %@", name, error);
+    } else {
+        NSLog(@"[AmethystHome] migrated %@ -> .amethyst/%@", name, name);
+    }
+}
+
+void amethyst_migrate_legacy_home(void) {
+    const char *home = getenv("POJAV_HOME");
+    if (!home) return;
+    NSString *root = @(home);
+    NSString *hidden = amethyst_hidden_root();
+    if (!hidden) return;
+    NSFileManager *fm = [NSFileManager defaultManager];
+
+    NSArray<NSString *> *items = @[
+        @"accounts", @"controlmap", @"cursors", @"cursor_types",
+        @"fontconfig", @"MG", @"dh_natives",
+        @"credits_cache.md", @"servers.json",
+        @"amethyst_bg.png", @"amethyst_bg.mp4",
+        @"launcher_preferences_v2.plist",
+    ];
+    for (NSString *name in items) {
+        amethyst_move_legacy_item(root, hidden, name);
+    }
+
+    // The background image preference stores an absolute path; repoint it at
+    // the migrated file so custom backgrounds keep loading.
+    NSString *bgPref = [[NSUserDefaults standardUserDefaults] stringForKey:@"amethyst_bg_image"];
+    if ([bgPref isKindOfClass:NSString.class] && bgPref.length > 0 && ![bgPref containsString:@"/.amethyst/"]) {
+        NSString *newPath = [hidden stringByAppendingPathComponent:bgPref.lastPathComponent];
+        if ([fm fileExistsAtPath:newPath]) {
+            [[NSUserDefaults standardUserDefaults] setObject:newPath forKey:@"amethyst_bg_image"];
+        }
+    }
+
+    // Obsolete staging folders: old runtime staging and JNA temp copies are
+    // recreated under their new hidden locations on demand.
+    for (NSString *name in @[@"runtimes", @"jna_tmp"]) {
+        [fm removeItemAtPath:[root stringByAppendingPathComponent:name] error:nil];
+    }
 }

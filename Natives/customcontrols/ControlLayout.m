@@ -1,5 +1,6 @@
 #import "ControlButton.h"
 #import "ControlLayout.h"
+#import "ControlLayoutConverter.h"
 #import "ControlSubButton.h"
 #import "CustomControlsUtils.h"
 #import "../LauncherPreferences.h"
@@ -12,6 +13,13 @@
 @implementation ControlLayout
 
 - (void)loadControlLayout:(NSMutableDictionary *)layoutDictionary {
+    self.sourceSyntax = [ControlLayoutConverter syntaxOfLayout:layoutDictionary];
+    if (self.sourceSyntax == ControlLayoutSyntaxZalith) {
+        NSMutableDictionary *converted = [ControlLayoutConverter internalLayoutFromZalith:layoutDictionary];
+        [layoutDictionary removeAllObjects];
+        [layoutDictionary addEntriesFromDictionary:converted];
+    }
+
     self.layoutDictionary = layoutDictionary;
 
     CGFloat currentScale = [self.layoutDictionary[@"scaledAt"] floatValue];
@@ -24,7 +32,7 @@
 - (void)loadControlFile:(NSString *)name {
     [self removeAllButtons];
 
-    NSString *controlFilePath = [NSString stringWithFormat:@"%s/controlmap/%@", getenv("POJAV_HOME"), name];
+    NSString *controlFilePath = amethyst_hidden_path([NSString stringWithFormat:@"controlmap/%@", name]);
 
     self.layoutDictionary = parseJSONFromFile(controlFilePath);
     if (self.layoutDictionary[@"NSErrorObject"] != nil) {

@@ -9,6 +9,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileFilter;
@@ -37,6 +38,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import net.kdt.pojavlaunch.uikit.UIKit;
 import net.kdt.pojavlaunch.utils.JSONUtils;
 import net.kdt.pojavlaunch.value.DependentLibrary;
@@ -52,7 +54,20 @@ public final class Tools {
     public static final String DIR_GAME_PROFILE = System.getProperty("user.dir");
     
     public static final String DIR_APP_DATA = System.getenv("POJAV_HOME");
-    public static final String DIR_ACCOUNT_NEW = DIR_APP_DATA + "/accounts";
+
+    // Launcher-private files (accounts, cursors, runtimes, ...) live in the
+    // hidden ".amethyst" dir. Native sets POJAV_HIDDEN_HOME before the JVM
+    // starts; fall back to the same convention when it is missing.
+    private static String resolveHiddenHome() {
+        String hiddenHome = System.getenv("POJAV_HIDDEN_HOME");
+        if (hiddenHome == null || hiddenHome.isEmpty()) {
+            hiddenHome = DIR_APP_DATA + "/.amethyst";
+        }
+        return hiddenHome;
+    }
+
+    public static final String DIR_HIDDEN_HOME = resolveHiddenHome();
+    public static final String DIR_ACCOUNT_NEW = DIR_HIDDEN_HOME + "/accounts";
 
     // New since 2.4.2
     public static final String DIR_HOME_VERSION = DIR_GAME_NEW + "/versions";
@@ -61,87 +76,43 @@ public final class Tools {
     public static final String ASSETS_PATH = DIR_GAME_NEW + "/assets";
     public static final String OBSOLETE_RESOURCES_PATH=DIR_GAME_NEW + "/resources";
 
-    // Voxy fix: RocksDB native is not usable on iOS (macOS build SIGILLs on
-    // A11). Voxy reads <world>/voxy/config.json and uses whatever storage
-    // backend is written there, so force every save (existing AND newly
-    // created in-game) to use the pure-Java "Memory" backend (TYPE=Memory)
-    // instead of the default RocksDB+ZSTD.
-    //
-    // A watchdog thread keeps scanning <gameDir>/saves while the game runs,
-    // because worlds created after launch would otherwise get Voxy's default
-    // config (RocksDB) and crash the JVM the moment it loads the native lib.
-    private static void injectVoxyMemoryStorageConfig() {
-        injectVoxyMemoryStorageConfigOnce();
-        Thread watcher = new Thread(new Runnable() {
-            public void run() {
-                long deadline = System.currentTimeMillis() + 15L * 60L * 1000L;
-                while (System.currentTimeMillis() < deadline) {
-                    try { Thread.sleep(2000L); } catch (InterruptedException e) { break; }
-                    try { injectVoxyMemoryStorageConfigOnce(false); } catch (Throwable ignored) {}
-                }
-            }
-        }, "VoxyConfigWatcher");
-        watcher.setDaemon(true);
-        watcher.start();
-    }
-
-    private static void injectVoxyMemoryStorageConfigOnce() {
-        injectVoxyMemoryStorageConfigOnce(true);
-    }
-
-    private static void injectVoxyMemoryStorageConfigOnce(boolean verbose) {
-        try {
-            File savesDir = new File(DIR_GAME_PROFILE, "saves");
-            if (!savesDir.isDirectory()) {
-                if (verbose) {
-                    System.out.println("[Voxy Fix] No saves dir at " + savesDir + ", skipping");
-                }
-                return;
-            }
-            String memoryConfig = "{\n" +
-                "  \"version\": 1,\n" +
-                "  \"disabled\": false,\n" +
-                "  \"sectionStorageConfig\": {\n" +
-                "    \"TYPE\": \"Serializer\",\n" +
-                "    \"storage\": {\n" +
-                "      \"TYPE\": \"Memory\"\n" +
-                "    }\n" +
-                "  }\n" +
-                "}";
-            File[] worlds = savesDir.listFiles();
-            if (worlds == null) return;
-            int patched = 0;
-            for (File world : worlds) {
-                if (!world.isDirectory() || !new File(world, "level.dat").exists()) continue;
-                File voxyDir = new File(world, "voxy");
-                File configFile = new File(voxyDir, "config.json");
-                if (configFile.exists()) {
-                    // Skip already-configured worlds
-                    try {
-                        byte[] b = new byte[(int) configFile.length()];
-                        java.io.FileInputStream fis = new java.io.FileInputStream(configFile);
-                        try { int rd = 0; while (rd < b.length) { int r = fis.read(b, rd, b.length - rd); if (r < 0) break; rd += r; } }
-                        finally { fis.close(); }
-                        if (new String(b, java.nio.charset.StandardCharsets.UTF_8).contains("Memory")) continue;
-                    } catch (Exception ignored) {}
-                }
-                voxyDir.mkdirs();
-                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(configFile)) {
-                    fos.write(memoryConfig.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                }
-                patched++;
-            }
-            if (verbose || patched > 0) {
-                System.out.println("[Voxy Fix] Injected Memory storage config into " + patched + " world(s)");
-            }
-        } catch (Exception e) {
-            System.err.println("[Voxy Fix] Failed to inject voxy config: " + e);
+    // Voxy 0.2.20 uses RocksDB+ZSTD for its persistent section store. Older
+    // Witch builds could not load RocksDB on iOS (the bundled macOS arm64
+    // binary uses ARMv8.3 RCPC instructions that SIGILL on A11), so they
+    // rewrote every save to Voxy's volatile "Memory" backend. RocksDB is now
+    // built for iOS, so remove only those legacy injected configs and let
+    // Voxy generate its default persistent RocksDB config again.
+    private static void migrateLegacyVoxyMemoryStorageConfig() {
+        File savesDir = new File(DIR_GAME_PROFILE, "saves");
+        if (!savesDir.isDirectory()) return;
+        File[] worlds = savesDir.listFiles();
+        if (worlds == null) return;
+        int migrated = 0;
+        for (File world : worlds) {
+            if (!world.isDirectory() || !new File(world, "level.dat").exists()) continue;
+            File configFile = new File(new File(world, "voxy"), "config.json");
+            if (!configFile.isFile()) continue;
+            try {
+                JsonObject root = JsonParser.parseString(read(configFile.getAbsolutePath())).getAsJsonObject();
+                JsonObject serializer = root.getAsJsonObject("sectionStorageConfig");
+                JsonObject storage = serializer == null ? null : serializer.getAsJsonObject("storage");
+                boolean legacy = root.has("version") && root.get("version").getAsInt() == 1
+                        && root.has("disabled") && !root.get("disabled").getAsBoolean()
+                        && serializer != null && serializer.has("TYPE")
+                        && "Serializer".equals(serializer.get("TYPE").getAsString())
+                        && storage != null && storage.has("TYPE")
+                        && "Memory".equals(storage.get("TYPE").getAsString());
+                if (legacy && configFile.delete()) migrated++;
+            } catch (Throwable ignored) {}
+        }
+        if (migrated > 0) {
+            System.out.println("[Voxy Fix] Removed legacy Memory storage config from " + migrated + " world(s); Voxy will recreate RocksDB storage");
         }
     }
 
     public static void launchMinecraft(MinecraftAccount profile, final JMinecraftVersionList.Version versionInfo) throws Throwable {
         System.out.println("[DEBUG] launchMinecraft: id=" + versionInfo.id + " inheritsFrom=" + versionInfo.inheritsFrom + " assets=" + versionInfo.assets + " mainClass=" + versionInfo.mainClass);
-        injectVoxyMemoryStorageConfig();
+        migrateLegacyVoxyMemoryStorageConfig();
         // Forge/NeoForge/Fabric log4j configs write logs/latest.log relative to
         // the process working directory; create it before the game's logging
         // starts or its RollingRandomAccessFile appender fails to open.
@@ -153,10 +124,36 @@ public final class Tools {
             neutralizeFabricLwjgl(versionInfo);
         }
         String[] launchArgs = getMinecraftArgs(profile, versionInfo);
+        String renderer = System.getenv("AMETHYST_RENDERER");
+        // Graphics-API forcing is now user-configurable (video.graphics_backend_forcing
+        // pref → WITCH_FORCE_BACKEND env, set in JavaLauncher before the JVM boots):
+        //   vulkan/opengl → append --graphicsBackend with that value
+        //   none          → append nothing; MC 26.x then honors its own in-game
+        //                   "Graphics Backend" option (options.txt) again
+        //   auto/unset    → legacy behavior, derived from the profile renderer
+        String forceBackend = System.getenv("WITCH_FORCE_BACKEND");
+        String forcedGraphicsBackend = null;
+        if (supportsForcedGraphicsBackend(versionInfo)) {
+            if ("vulkan".equals(forceBackend) || "opengl".equals(forceBackend)) {
+                forcedGraphicsBackend = forceBackend;
+            } else if (forceBackend != null && (forceBackend.isEmpty() || "none".equals(forceBackend))) {
+                // follow-minecraft: append nothing; MC reads its own options
+            } else if (renderer != null && !renderer.isEmpty()) {
+                forcedGraphicsBackend = "libMoltenVK.dylib".equals(renderer) ? "vulkan" : "opengl";
+            }
+        }
+        if (forcedGraphicsBackend != null) {
+            String[] withBackend = Arrays.copyOf(launchArgs, launchArgs.length + 2);
+            withBackend[launchArgs.length] = "--graphicsBackend";
+            withBackend[launchArgs.length + 1] = forcedGraphicsBackend;
+            launchArgs = withBackend;
+        }
         System.out.println("[DEBUG] Minecraft Args: " + Arrays.toString(launchArgs));
 
         final String launchClassPath = generateLaunchClassPath(versionInfo);
         System.out.println("[DEBUG] Launch classpath: " + launchClassPath);
+        prepareJnaDispatch(launchClassPath);
+        disableForgeEarlyWindow(launchClassPath);
 
         System.out.println("Args init finished. Now starting game");
 
@@ -179,6 +176,119 @@ public final class Tools {
         Class<?> clazz = loader.loadClass(mainClass);
         Method method = clazz.getMethod("main", String[].class);
         method.invoke(null, new Object[]{launchArgs});
+    }
+
+    // Forge 1.18+ opens its own splash window (fmlearlydisplay) on a separate
+    // thread and calls GL.createCapabilities() from there. On iOS that thread
+    // never has a current GL context, so the game dies with "There is no
+    // OpenGL context current in the current thread" before Minecraft's own
+    // window exists. Forge falls back to its DummyProvider when
+    // earlyWindowControl is off, which is exactly what we need.
+    private static void disableForgeEarlyWindow(String launchClassPath) {
+        boolean forge = false;
+        for (String entry : launchClassPath.split(":")) {
+            String name = entry.substring(entry.lastIndexOf('/') + 1);
+            if (name.startsWith("fmlearlydisplay-") || name.contains("neoforge")) {
+                forge = true;
+                break;
+            }
+        }
+        if (!forge) return;
+        try {
+            File configDir = new File(DIR_GAME_PROFILE, "config");
+            if (!configDir.isDirectory() && !configDir.mkdirs()) return;
+            File fmlConfig = new File(configDir, "fml.toml");
+            String content = fmlConfig.isFile() ? read(fmlConfig.getAbsolutePath()) : "";
+            String patched = patchTomlBool(content, "earlyWindowControl", false);
+            if (!fmlConfig.isFile() || !patched.equals(content)) {
+                write(fmlConfig.getAbsolutePath(), patched);
+                System.out.println("[ForgeFix] earlyWindowControl = false -> " + fmlConfig);
+            }
+        } catch (Throwable t) {
+            System.err.println("[ForgeFix] failed to disable early window: " + t);
+        }
+    }
+
+    private static String patchTomlBool(String content, String key, boolean value) {
+        String wanted = key + " = " + value;
+        String[] lines = content.split("\n", -1);
+        boolean found = false;
+        for (int i = 0; i < lines.length; i++) {
+            String trimmed = lines[i].trim();
+            if (trimmed.startsWith(key) && trimmed.length() > key.length()) {
+                char next = trimmed.charAt(key.length());
+                if (next == '=' || next == ' ' || next == '\t') {
+                    lines[i] = wanted;
+                    found = true;
+                }
+            }
+        }
+        if (found) return String.join("\n", lines);
+        if (content.isEmpty()) return wanted + "\n";
+        return content.endsWith("\n") ? content + wanted + "\n" : content + "\n" + wanted + "\n";
+    }
+
+    // MC ships JNA 5.x, whose native dispatch reports version 6.1.6, while the
+    // launcher bundle carries a 7.0.4 build: JNA then refuses to initialise
+    // ("There is an incompatible JNA native library installed on this system /
+    // Expected: 6.1.6 / Found: 7.0.4") and every mod that touches oshi/JNA
+    // dies with ExceptionInInitializerError (e.g. wonderland on Forge).
+    // Extract the darwin-arm64 dispatch that ships inside the exact jna jar on
+    // the game classpath into a writable dir and point jna.boot.library.path
+    // at it. The extracted copy is a macOS dylib; the launcher's dyld bypass
+    // patches its platform on dlopen, same as any other mod native.
+    private static void prepareJnaDispatch(String launchClassPath) {
+        try {
+            for (String entry : launchClassPath.split(":")) {
+                if (entry.isEmpty() || !entry.endsWith(".jar")) continue;
+                File jar = new File(entry);
+                if (!jar.isFile()) continue;
+                byte[] dispatch = null;
+                try (ZipFile zip = new ZipFile(jar)) {
+                    for (String candidate : new String[] {
+                            "com/sun/jna/darwin-aarch64/libjnidispatch.jnilib",
+                            "com/sun/jna/darwin-aarch64/libjnidispatch.dylib"}) {
+                        ZipEntry nativeEntry = zip.getEntry(candidate);
+                        if (nativeEntry == null) continue;
+                        try (InputStream in = zip.getInputStream(nativeEntry)) {
+                            dispatch = readAllBytes(in);
+                        }
+                        break;
+                    }
+                } catch (Exception ignored) {
+                    continue;
+                }
+                if (dispatch == null) continue;
+
+                File dir = new File(System.getProperty("java.io.tmpdir"),
+                        "jna_dispatch/" + jar.getName().replaceAll("[^A-Za-z0-9._-]", "_"));
+                if (!dir.isDirectory() && !dir.mkdirs()) continue;
+                // JNA tries System.mapLibraryName("jnidispatch") and then the
+                // explicit suffixes; provide both spellings.
+                for (String name : new String[] {"libjnidispatch.dylib", "libjnidispatch.jnilib"}) {
+                    File out = new File(dir, name);
+                    if (!(out.isFile() && out.length() == dispatch.length)) {
+                        try (FileOutputStream fos = new FileOutputStream(out)) {
+                            fos.write(dispatch);
+                        }
+                    }
+                    out.setExecutable(true, false);
+                }
+                System.setProperty("jna.boot.library.path", dir.getAbsolutePath());
+                System.out.println("[JNAFix] dispatch from " + jar.getName() + " -> " + dir);
+                return;
+            }
+        } catch (Throwable t) {
+            System.err.println("[JNAFix] prepareJnaDispatch failed: " + t);
+        }
+    }
+
+    private static byte[] readAllBytes(InputStream in) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = in.read(buffer)) > 0) out.write(buffer, 0, read);
+        return out.toByteArray();
     }
 
     // Fabric/Quilt instances load Mojang's original (unpatched) LWJGL jars from
@@ -429,6 +539,17 @@ public final class Tools {
         return argsFromJson;
     }
 
+    public static boolean supportsForcedGraphicsBackend(JMinecraftVersionList.Version versionInfo) {
+        try {
+            File jar = new File(DIR_HOME_VERSION + "/" + versionInfo.id + "/" + versionInfo.id + ".jar");
+            try (ZipFile zip = new ZipFile(jar)) {
+                return zip.getEntry("net/minecraft/client/PreferredGraphicsApi.class") != null;
+            }
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     public static String fromStringArray(String[] strArr) {
         StringBuilder builder = new StringBuilder();
         for (int i = 0; i < strArr.length; i++) {
@@ -639,8 +760,11 @@ createLibraryInfo(libItem);
         // classifier entry, so the jar never lands on the classpath and FML
         // aborts with "Failed to find system mod: forge". Append every
         // *-universal.jar shipped under libraries/net/minecraftforge/forge/.
+        // Only for Forge-family instances: doing this unconditionally put the
+        // 1.20.1 Forge universal jar on LabyMod 26.3's classpath and injected
+        // foreign net.minecraftforge/FML classes into it.
         File forgeLibRoot = new File(Tools.DIR_HOME_LIBRARY + "/net/minecraftforge/forge");
-        if (forgeLibRoot.isDirectory()) {
+        if (isForgeFamily(info) && forgeLibRoot.isDirectory()) {
             File[] forgeVersionDirs = forgeLibRoot.listFiles();
             if (forgeVersionDirs != null) {
                 for (File forgeVersionDir : forgeVersionDirs) {
@@ -657,6 +781,29 @@ createLibraryInfo(libItem);
             }
         }
         return libDir.toArray(new String[0]);
+    }
+
+    // True for Forge/NeoForge instances (whose launch needs the Forge
+    // *-universal.jar on the classpath). Deliberately ignores unrelated
+    // net.minecraftforge artifacts such as srgutils, which LabyMod ships too.
+    private static boolean isForgeFamily(JMinecraftVersionList.Version info) {
+        String id = info.id == null ? "" : info.id.toLowerCase(java.util.Locale.ROOT);
+        String mainClass = info.mainClass == null ? "" : info.mainClass.toLowerCase(java.util.Locale.ROOT);
+        if (id.contains("forge") || mainClass.contains("bootstraplauncher") || mainClass.contains("modlauncher")) {
+            return true;
+        }
+        if (info.libraries != null) {
+            for (DependentLibrary lib : info.libraries) {
+                String name = lib.name;
+                if (name == null) continue;
+                if (name.startsWith("net.minecraftforge:forge:")
+                        || name.startsWith("net.neoforged:neoforge:")
+                        || name.startsWith("net.neoforged:forge:")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public static JMinecraftVersionList.Version getVersionInfo(String versionName) {
@@ -938,8 +1085,12 @@ createLibraryInfo(libItem);
             return null;
         }
 
-        // Extract library to app's Documents directory (persistent, signable)
-        File extractDir = new File(DIR_APP_DATA, "dh_natives");
+        // Extract library to the hidden app data directory (persistent, signable)
+        String hiddenHome = System.getenv("POJAV_HIDDEN_HOME");
+        if (hiddenHome == null || hiddenHome.isEmpty()) {
+            hiddenHome = DIR_APP_DATA + "/.amethyst";
+        }
+        File extractDir = new File(hiddenHome, "dh_natives");
         if (!extractDir.exists()) {
             extractDir.mkdirs();
         }

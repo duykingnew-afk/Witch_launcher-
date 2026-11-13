@@ -17,10 +17,13 @@
 #include <dlfcn.h>
 #include <libgen.h>
 #include <mach/mach.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <os/proc.h>
 #include <stdatomic.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "jni.h"
 #include "glfw_keycodes.h"
@@ -543,15 +546,34 @@ int callback_SurfaceViewController_touchHotbar(CGFloat x, CGFloat y) {
         return -1;
     }
 
-    int barHeight = mcscale(20);
-    int barY = physicalHeight - barHeight;
-    if (y < barY) return -1;
+    if (guiScale <= 0 || resolutionScale <= 0.0f) return -1;
+    int barHeight = mcscale(22);
+    int barWidth = mcscale(182);
 
-    int barWidth = mcscale(180);
-    int barX = (physicalWidth / 2) - (barWidth / 2);
+    /* Match vanilla's integer GUI coordinates: guiWidth = framebufferWidth /
+     * guiScale, and the hotbar starts at guiWidth / 2 - 91. Using
+     * physicalWidth / 2 - barWidth / 2 leaves a few pixels of drift on the
+     * left edge, enough to miss slot 1 on a Retina display. */
+    int framebufferWidth = windowWidth > 0 ? windowWidth : (int)lroundf(physicalWidth * resolutionScale);
+    int framebufferHeight = windowHeight > 0 ? windowHeight : (int)lroundf(physicalHeight * resolutionScale);
+    /* Match MC 26.3's Window.setGuiScale: guiScaled = ceil(fb / scale). Integer
+     * division truncates and shifts the whole bar left by up to 1 gui pixel
+     * (5 fb px at scale 5) when fb/scale is fractional, e.g. 2208/5 = 441.6. */
+    int guiWidth = (int)ceilf((CGFloat)framebufferWidth / (CGFloat)guiScale);
+    int guiHeight = (int)ceilf((CGFloat)framebufferHeight / (CGFloat)guiScale);
+    int barX = (int)lroundf((guiWidth / 2 - 91) * (CGFloat)guiScale / resolutionScale);
+    int barY = (int)lroundf((guiHeight - 22) * (CGFloat)guiScale / resolutionScale);
+    if (y < barY) return -1;
     if (x < barX || x >= barX + barWidth) return -1;
 
-    return hotbarKeys[(int) MathUtils_map(x, barX, barX + barWidth, 0, 9)];
+    /* The vanilla hotbar is 182x22 logical pixels with nine 20px slots and a
+     * 1px border. Mapping 182/9 shifts the right-hand slots; use the real
+     * 20px pitch and clamp the border pixels. */
+    int index = (int) ((x - barX - mcscale(1)) / (CGFloat) mcscale(20));
+    if (index < 0) index = 0;
+    if (index > 8) index = 8;
+    int slot = hotbarKeys[index];
+    return slot;
 }
 
 JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_uikit_UIKit_updateMCGuiScale(JNIEnv* env, jclass clazz, jint scale) {
@@ -696,6 +718,38 @@ static uint32_t aasdl_winID;
 static int aasdl_winW;
 static int aasdl_winH;
 
+static int aasdl_guiScaleFromOptions(void) {
+    const char *gameDir = getenv("POJAV_GAME_DIR_PROFILE");
+    if (!gameDir || !*gameDir) gameDir = getenv("POJAV_GAME_DIR");
+    if (!gameDir || !*gameDir) return 0;
+    NSString *path = [@(gameDir) stringByAppendingPathComponent:@"options.txt"];
+    NSString *contents = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil];
+    if (!contents) return 0;
+    for (NSString *line in [contents componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
+        if ([line hasPrefix:@"guiScale:"]) {
+            return [line substringFromIndex:9].intValue;
+        }
+    }
+    return 0;
+}
+
+static int aasdl_calculateGuiScale(void) {
+    int requested = aasdl_guiScaleFromOptions();
+    /* windowWidth/Height are the game framebuffer dimensions. aasdl_winW/H
+     * are SDL window points (736x414 on an iPhone 8 Plus) and produce a bogus
+     * scale of 1; use the physical surface size while the game is still
+     * starting, and never overwrite a valid scale with 1. */
+    int w = windowWidth > 0 ? windowWidth : (int)lroundf(physicalWidth * resolutionScale);
+    int h = windowHeight > 0 ? windowHeight : (int)lroundf(physicalHeight * resolutionScale);
+    if (w <= 0 || h <= 0) return guiScale > 0 ? guiScale : 1;
+    int scale = 1;
+    while (scale != requested && scale < w && scale < h &&
+           w / (scale + 1) >= 320 && h / (scale + 1) >= 240) {
+        scale++;
+    }
+    return scale;
+}
+
 // SDL3 cursor hook: track cursor shape from SDL_CreateSystemCursor
 typedef void* (*SDL_CreateSystemCursor_func)(int);
 typedef void* (*SDL_SetCursor_func)(void*);
@@ -829,24 +883,140 @@ static uint32_t aasdl_windowID(void) {
     return aasdl_winID;
 }
 
+/* Shared dlsym'd SDL3 accessors for the diag logger and the pixel-density
+ * fallback. All resolved lazily and cached; every entry is NULL-safe. */
+typedef void *(*SDL_GetWindowFromID_func)(uint32_t);
+typedef float (*SDL_GetWindowPixelDensity_func)(void *);
+typedef uint32_t (*SDL_GetMouseState_func)(float *, float *);
+typedef void (*SDL_GetWindowSize_func)(void *, int *, int *);
+
+static SDL_GetWindowFromID_func aasdl_getWindowFromID;
+static SDL_GetWindowPixelDensity_func aasdl_getWindowPixelDensity;
+static SDL_GetMouseState_func aasdl_getMouseState;
+static SDL_GetWindowSize_func aasdl_getWindowSize;
+static bool aasdl_sdlSymbolsLookedUp;
+
+static void aasdl_lookupSdlSymbols(void) {
+    if (aasdl_sdlSymbolsLookedUp) return;
+    aasdl_sdlSymbolsLookedUp = true;
+    aasdl_getWindowFromID = (SDL_GetWindowFromID_func)dlsym(RTLD_DEFAULT, "SDL_GetWindowFromID");
+    aasdl_getWindowPixelDensity = (SDL_GetWindowPixelDensity_func)dlsym(RTLD_DEFAULT, "SDL_GetWindowPixelDensity");
+    aasdl_getMouseState = (SDL_GetMouseState_func)dlsym(RTLD_DEFAULT, "SDL_GetMouseState");
+    aasdl_getWindowSize = (SDL_GetWindowSize_func)dlsym(RTLD_DEFAULT, "SDL_GetWindowSize");
+}
+
+/* The game's live SDL_Window*, or NULL. */
+static void *aasdl_sdlWindow(void) {
+    aasdl_lookupSdlSymbols();
+    void *win = NULL;
+    if (aasdl_getWindowFromID && aasdl_winID) {
+        win = aasdl_getWindowFromID(aasdl_winID);
+    }
+    return win;
+}
+
+/* SDL window pixel density (framebuffer pixels / window points, e.g. 3.0 on
+ * a 3x device). Used only as a fallback while windowWidth/Height are not yet
+ * reported by the game. */
+static float aasdl_windowPixelScale(void) {
+    aasdl_lookupSdlSymbols();
+    void *win = aasdl_sdlWindow();
+    if (win && aasdl_getWindowPixelDensity) {
+        float density = aasdl_getWindowPixelDensity(win);
+        if (density > 0.0f) return density;
+    }
+    return 1.0f;
+}
+
+static void aasdl_log_input_state(const char *tag, uint32_t eventWindowID) {
+    typedef void *(*SDL_GetMouseFocus_func)(void);
+    typedef void *(*SDL_GetKeyboardFocus_func)(void);
+    typedef bool (*SDL_GetRelativeMouseMode_func)(void);
+
+    static SDL_GetMouseFocus_func getMouseFocus;
+    static SDL_GetKeyboardFocus_func getKeyboardFocus;
+    static SDL_GetRelativeMouseMode_func getRelativeMouseMode;
+    static bool lookedUp;
+    if (!lookedUp) {
+        getMouseFocus = (SDL_GetMouseFocus_func)dlsym(RTLD_DEFAULT, "SDL_GetMouseFocus");
+        getKeyboardFocus = (SDL_GetKeyboardFocus_func)dlsym(RTLD_DEFAULT, "SDL_GetKeyboardFocus");
+        getRelativeMouseMode = (SDL_GetRelativeMouseMode_func)dlsym(RTLD_DEFAULT, "SDL_GetRelativeMouseMode");
+        lookedUp = true;
+    }
+    aasdl_lookupSdlSymbols();
+
+    void *mouseFocus = getMouseFocus ? getMouseFocus() : NULL;
+    void *keyboardFocus = getKeyboardFocus ? getKeyboardFocus() : NULL;
+    void *resolvedWindow = aasdl_sdlWindow();
+    int relative = getRelativeMouseMode ? getRelativeMouseMode() : -1;
+    /* SDL core probes: the absolute cursor position SDL itself holds (should
+     * mirror what we pushed via SDL_PushEvent routing) and the window's
+     * logical point size (pixelDensity = windowWidth/lw proves which space
+     * Minecraft's getScreenWidth() is in). */
+    float coreMouseX = -1.0f, coreMouseY = -1.0f;
+    uint32_t coreButtons = 0;
+    if (aasdl_getMouseState) {
+        coreButtons = aasdl_getMouseState(&coreMouseX, &coreMouseY);
+    }
+    int lws[2] = { 0, 0 };
+    if (resolvedWindow && aasdl_getWindowSize) {
+        aasdl_getWindowSize(resolvedWindow, &lws[0], &lws[1]);
+    }
+    NSLog(@"[InputDiag] %s winID=%u eventWin=%u resolved=%p mouseFocus=%p keyboardFocus=%p relative=%d inputReady=%d grabbing=%d window=%dx%d sdl=%dx%d coreMouse=(%.1f,%.1f) buttons=%u density=%.2f",
+          tag, aasdl_winID, eventWindowID, resolvedWindow, mouseFocus, keyboardFocus,
+          relative, isInputReady, isGrabbing, windowWidth, windowHeight, aasdl_winW, aasdl_winH,
+          coreMouseX, coreMouseY, coreButtons,
+          resolvedWindow && lws[0] > 0 ? (float) windowWidth / (float) lws[0] : 0.0f);
+}
+
 /*
  * Called by the patched SDL3 UIKit backend (UIKit_ShowWindow /
  * viewDidLayoutSubviews / UIKit_DestroyWindow) on the main thread.
  * windowID == 0 means the SDL window is gone.
  */
+@interface AASDLPerfProbe : NSObject
++ (void)maybeStart;
+@end
+
+static void aasdl_perfProbeMaybeStart(void) {
+    if ([AASDLPerfProbe respondsToSelector:@selector(maybeStart)]) {
+        [AASDLPerfProbe maybeStart];
+    }
+}
+
 void AASDL_NoteWindow(uint32_t windowID, int w, int h) {
+    uint32_t previousWindowID = aasdl_winID;
     BOOL wasUp = aasdl_winID != 0;
     BOOL isUp = windowID != 0;
     aasdl_winID = windowID;
     aasdl_winW = w;
     aasdl_winH = h;
     if (isUp && !wasUp) {
-        NSLog(@"[SDLInject] SDL window up: id=%u %dx%d", windowID, w, h);
+        NSLog(@"[SDLInject] SDL window up: id=%u %dx%d previous=%u", windowID, w, h, previousWindowID);
+        /* Pure-SDL sessions (MC 26.x / RenderPearl, no GLFW callbacks) never
+         * run glfwPollEvents(), the only caller of
+         * CallbackBridge.nativeSetInputReady(true), and the GL-only
+         * egl_bridge setter never runs under MoltenVK either - so
+         * isInputReady stayed 0 for the whole session and hardware-keyboard
+         * text (Telex gating) stayed disabled. The SDL game window being up
+         * means the game expects input, so flip the flag here like
+         * glfwPollEvents does for GLFW sessions. */
+        if (!GLFW_invoke_Char && !GLFW_invoke_Key && !GLFW_invoke_CursorPos &&
+            !isInputReady) {
+            CallbackBridge_nativeSetInputReady(YES);
+            NSLog(@"[SDLInject] SDL session input ready (no GLFW callbacks)");
+        }
+        aasdl_perfProbeMaybeStart();
     } else if (!isUp && wasUp) {
-        NSLog(@"[SDLInject] SDL window gone");
+        NSLog(@"[SDLInject] SDL window gone: previous=%u", previousWindowID);
     } else if (isUp) {
-        // size may have changed (rotation); nothing else to do
+        NSLog(@"[SDLInject] SDL window metrics update: id=%u %dx%d previous=%u", windowID, w, h, previousWindowID);
     }
+    aasdl_log_input_state("note-window", windowID);
+    guiScale = aasdl_calculateGuiScale();
+    NSLog(@"[SDLInject] SDL window metrics: sdl=%dx%d physical=%dx%d window=%dx%d guiScale=%d res=%.2f",
+          aasdl_winW, aasdl_winH, physicalWidth, physicalHeight, windowWidth, windowHeight,
+          guiScale, resolutionScale);
 }
 
 /*
@@ -901,18 +1071,28 @@ void AASDL_NoteCursorShape(int shape) {
 void AASDL_NoteGrab(bool grabbed) {
     aasdl_lastGrabSec = CACurrentMediaTime();
     isGrabbing = grabbed ? JNI_TRUE : JNI_FALSE;
+    NSLog(@"[InputDiag] grab=%d winID=%u", grabbed, aasdl_winID);
     dispatch_async(dispatch_get_main_queue(), ^{
         SurfaceViewController *vc = ((SurfaceViewController *)UIWindow.mainWindow.rootViewController);
         [vc updateGrabState];
     });
 }
 
-/* Map game-window pixel coords to SDL event coordinates. The game (Minecraft
- * 26.x) treats SDL mouse event coordinates as framebuffer pixels (the basis
- * of its GUI and renderer), so pass the launcher's framebuffer-space
- * coordinates through unchanged. */
+/* Map the launcher's cursor coordinates to the game's mouse space. Pass
+ * framebuffer-pixel coordinates straight through: Minecraft 26.3 scales mouse
+ * positions by Window.getScreenWidth(), which the launcher forces to the
+ * framebuffer size (MCOptionUtils sets overrideWidth/Height = the screensize
+ * -D property = 2208x1242; the in-game F3 "Window: 2208x1242 (3x pixel
+ * density)" line proves it: getScreenWidth()=2208 while
+ * pixelDensity=pixels/SDL_GetWindowSize=2208/736=3.0). An earlier commit
+ * divided these to SDL window points (736x414), which made every GUI cursor,
+ * hover and menu click land at 1/3 of the intended position — menus looked
+ * dead to taps while drag-motion and keyboard still worked. Relative deltas
+ * (xrel/yrel) are kept in framebuffer pixels in aasdl_pushMouseMotion. */
 static BOOL aasdl_coords(CGFloat x, CGFloat y, float *outX, float *outY) {
-    if (windowWidth <= 0 || windowHeight <= 0) return NO;
+    if (windowWidth <= 0 || windowHeight <= 0 || aasdl_winW <= 0 || aasdl_winH <= 0) {
+        return NO;
+    }
     *outX = (float) x;
     *outY = (float) y;
     return YES;
@@ -929,8 +1109,17 @@ static void aasdl_pushMouseMotion(float x, float y, float xrel, float yrel, uint
      * SDL keeps the absolute coordinate in mouse->last_x/last_y even while
      * in relative mode, so an off-window x/y would corrupt the cursor
      * position seen by SDL_GetMouseState when the menu opens. */
-    m->x = fmaxf(0.0f, fminf(x, (float) windowWidth - 1.0f));
-    m->y = fmaxf(0.0f, fminf(y, (float) windowHeight - 1.0f));
+    /* Clamp span: absolute x/y travel in framebuffer-pixel space (see
+     * aasdl_coords); SDL's ConstrainMousePosition compares against the pixel
+     * size, so clamp to windowWidth/Height, not to the SDL point size. */
+    const float spanW = windowWidth > 0 ? (float) windowWidth : (aasdl_winW > 0 ? (float) aasdl_winW * aasdl_windowPixelScale() : 736.0f);
+    const float spanH = windowHeight > 0 ? (float) windowHeight : (aasdl_winH > 0 ? (float) aasdl_winH * aasdl_windowPixelScale() : 414.0f);
+    m->x = fmaxf(0.0f, fminf(x, spanW - 1.0f));
+    m->y = fmaxf(0.0f, fminf(y, spanH - 1.0f));
+    /* Keep relative motion in physical pixels. Minecraft's MouseHandler adds
+     * xrel/yrel directly to accumulatedDX/DY for camera rotation; converting
+     * them to window points made Retina devices ~3x less sensitive (a full
+     * screen drag only turned the camera a little). */
     m->xrel = xrel; m->yrel = yrel;
     aasdl_PushEvent(&ev);
 }
@@ -946,6 +1135,12 @@ static void aasdl_pushMouseButton(int button, bool down, float x, float y) {
     b->clicks = 1;
     b->x = x; b->y = y;
     aasdl_PushEvent(&ev);
+    /* Tap-driven diagnostics: one line per press/release, no per-frame spam.
+     * This is the only trace of the click path - motion already has the
+     * note-window InputDiag lines, but menu-click failures were invisible in
+     * user reports. */
+    NSLog(@"[InputDiag] button push b=%d down=%d at=(%.1f,%.1f) span=%ux%u win=%u grabbing=%d",
+          button, down, x, y, windowWidth, windowHeight, aasdl_windowID(), isGrabbing);
     if (down) {
         aasdl_buttons |= (1u << (button - 1));
     } else {
@@ -954,13 +1149,14 @@ static void aasdl_pushMouseButton(int button, bool down, float x, float y) {
 }
 
 static void aasdl_pushMouseWheel(float xoffset, float yoffset) {
+    if (xoffset == 0.0f && yoffset == 0.0f) return;
     AASDL_Event ev;
     memset(&ev, 0, sizeof(ev));
     AASDL_MouseWheelEvent *w = (AASDL_MouseWheelEvent *) ev.raw;
     w->type = 0x403;
     w->windowID = aasdl_windowID();
     w->x = xoffset; w->y = yoffset;
-    w->direction = 1;
+    w->direction = 0;
     w->integer_x = (int32_t) xoffset;
     w->integer_y = (int32_t) yoffset;
     float mx, my;
@@ -1008,8 +1204,16 @@ static void aasdl_pushTextInput(uint32_t codepoint) {
     }
     t->type = 0x303; /* SDL_EVENT_TEXT_INPUT (was 0x302 TEXT_EDITING: chat text never committed) */
     t->windowID = aasdl_windowID();
-    t->text = utf8;
-    aasdl_PushEvent(&ev);
+    /* SDL_PushEvent copies the event struct, not the pointed-to string. A
+     * stack buffer here became dangling before the game read the event, which
+     * produced random characters in chat. Keep a heap copy alive. */
+    t->text = strdup(utf8);
+    if (!t->text) return;
+    int pushed = aasdl_PushEvent(&ev);
+    if (pushed == 0) {
+        // SDL did not take ownership on failure; do not strand the heap copy.
+        free((void *)t->text);
+    }
 }
 
 /* Mirrors a UIKit touch into an SDL touch finger event. The launcher tracks a
@@ -1085,7 +1289,13 @@ static BOOL aasdl_mapKey(int key, uint32_t *scancode, uint32_t *keycode) {
         return YES;
     }
     if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9) {
-        *scancode = 30 + (key - GLFW_KEY_0);
+        /* SDL scancode digit row: 1..9 = 30..38 and 0 = 39 (verified against
+         * Enter=40/Escape=41 entries below). The old `30 + (key - GLFW_KEY_0)`
+         * shifted every digit one key to the right, so pressing "1" handed the
+         * game the scancode of "2" — hotbar tap/press 1 selected slot 2, 2
+         * selected 3, and slot 1 was unreachable. */
+        int digit = key - GLFW_KEY_0; /* '1'=1 .. '9'=9, '0'=0 */
+        *scancode = digit > 0 ? (29 + digit) : 39;
         *keycode = (uint32_t) key;
         return YES;
     }
@@ -1161,19 +1371,27 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSendCursorEnter(
 void CallbackBridge_nativeSendCursorPos(char event, CGFloat x, CGFloat y) {
     if (!isInputReady && GLFW_invoke_CursorPos) return;
 
+    CGFloat relX = 0.0, relY = 0.0;
     switch (event) {
         case ACTION_DOWN:
         case ACTION_UP:
             if (!isGrabbing) {
                 cursorX = x;
                 cursorY = y;
+            } else {
+                cLastX = x;
+                cLastY = y;
             }
             break;
 
         case ACTION_MOVE:
             if (isGrabbing) {
-                cursorX += x - cLastX;
-                cursorY += y - cLastY;
+                relX = x - cLastX;
+                relY = y - cLastY;
+                cursorX += relX;
+                cursorY += relY;
+                cLastX = x;
+                cLastY = y;
             } else {
                 cursorX = x;
                 cursorY = y;
@@ -1183,6 +1401,8 @@ void CallbackBridge_nativeSendCursorPos(char event, CGFloat x, CGFloat y) {
         case ACTION_MOVE_MOTION:
             cursorX += x;
             cursorY += y;
+            relX = x;
+            relY = y;
             break;
     }
 
@@ -1194,9 +1414,9 @@ void CallbackBridge_nativeSendCursorPos(char event, CGFloat x, CGFloat y) {
         float mx, my;
         if (aasdl_coords(cursorX, cursorY, &mx, &my)) {
             float xrel = 0.0f, yrel = 0.0f;
-            if (event == ACTION_MOVE_MOTION) {
-                xrel = (float) x;
-                yrel = (float) y;
+            if (event == ACTION_MOVE_MOTION || (event == ACTION_MOVE && isGrabbing)) {
+                xrel = (float) relX;
+                yrel = (float) relY;
             }
             aasdl_pushMouseMotion(mx, my, xrel, yrel, aasdl_buttons);
         }
@@ -1307,17 +1527,29 @@ void CallbackBridge_nativeSendMouseButton(int button, int action, int mods) {
         if (button == -1) return;
         static const int glfwToSdl[3] = { 1, 3, 2 };
         int sdlButton = (button >= 0 && button < 3) ? glfwToSdl[button] : button + 1;
-        if (sdlButton < 1 || sdlButton > 8) return;
+        if (sdlButton < 1 || sdlButton > 8) {
+            NSLog(@"[InputDiag] button drop: glfw=%d -> out-of-range sdl=%d", button, sdlButton);
+            return;
+        }
         float mx, my;
         if (isGrabbing) {
             // In grab mode cursorX/cursorY accumulate relative deltas and can
             // go negative or beyond the window; clamp button coordinates to
             // the window center so the game never sees out-of-window clicks.
-            mx = (float) aasdl_winW / 2.0f;
-            my = (float) aasdl_winH / 2.0f;
+            // The center is expressed in framebuffer pixels (the space
+            // Minecraft's getScreenWidth() expects — see aasdl_coords).
+            mx = (windowWidth > 0 ? (float) windowWidth : (float) aasdl_winW * aasdl_windowPixelScale()) / 2.0f;
+            my = (windowHeight > 0 ? (float) windowHeight : (float) aasdl_winH * aasdl_windowPixelScale()) / 2.0f;
             aasdl_pushMouseButton(sdlButton, action != 0, mx, my);
         } else if (aasdl_coords(cursorX, cursorY, &mx, &my)) {
             aasdl_pushMouseButton(sdlButton, action != 0, mx, my);
+        } else {
+            /* Click silently dropped because the framebuffer/window sizes are
+             * not reported yet (or the window is gone). Without this line a
+             * dead-click report had zero trace: taps fired but nothing was
+             * ever pushed. Keep it tap-driven so it cannot spam. */
+            NSLog(@"[InputDiag] button drop b=%d size=(%dx%d) sdl-win=%dx%d win=%u",
+                  button, windowWidth, windowHeight, aasdl_winW, aasdl_winH, aasdl_windowID());
         }
     }
 }
@@ -1336,6 +1568,9 @@ __attribute__((used)) void AASDL_GetFramebufferSize(int *w, int *h) {
 void CallbackBridge_nativeSendScreenSize(int width, int height) {
     windowWidth = width;
     windowHeight = height;
+    guiScale = aasdl_calculateGuiScale();
+    NSLog(@"[Input] screen size: physical=%dx%d window=%dx%d guiScale=%d res=%.2f",
+          physicalWidth, physicalHeight, windowWidth, windowHeight, guiScale, resolutionScale);
     
     if (isInputReady) {
         if (GLFW_invoke_FramebufferSize) {
@@ -1358,14 +1593,14 @@ void CallbackBridge_nativeSendScreenSize(int width, int height) {
 }
 
 void CallbackBridge_nativeSendScroll(CGFloat xoffset, CGFloat yoffset) {
-    if (GLFW_invoke_Scroll && isInputReady) {
+    if (aasdl_available() && aasdl_windowID() != 0) {
+        aasdl_pushMouseWheel((float) xoffset, (float) yoffset);
+    } else if (GLFW_invoke_Scroll && isInputReady) {
         if (isUseStackQueueCall) {
             sendDataFloat(EVENT_TYPE_SCROLL, xoffset, yoffset, 0, 0);
         } else {
             safeInvokeScroll((void*) showingWindow, (double) xoffset, (double) yoffset);
         }
-    } else if (aasdl_available()) {
-        aasdl_pushMouseWheel((float) xoffset, (float) yoffset);
     }
 }
 
@@ -1388,5 +1623,63 @@ void CallbackBridge_nativeSetWindowFocused(BOOL focused, BOOL iconified) {
     void *window = (void *)showingWindow;
     safeInvokeWindowFocus(window, focused ? 1 : 0);
     safeInvokeWindowIconify(window, iconified ? 1 : 0);
-    NSLog(@"[SceneLifecycle] GLFW window focused=%d iconified=%d", focused, iconified);
 }
+
+/* WITCH_PERF=1 opt-in probe: every 10 s it prints one [PerfProbe] line with
+ * the launcher main-thread frame rate (CADisplayLink ticks vs the display's
+ * refresh), how late ticks fired on average (main-thread stalls), and the
+ * process memory footprint. Off by default, zero cost when the env var is
+ * unset, so normal play is unaffected. Used to measure in-game lag with
+ * real numbers instead of guesses. */
+@implementation AASDLPerfProbe {
+    CADisplayLink *_link;
+    int _ticks;
+    double _bucketStart;
+    double _skewSum;
+    int _skewCount;
+}
+
++ (void)maybeStart {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        const char *on = getenv("WITCH_PERF");
+        if (!on || !*on) return;
+        AASDLPerfProbe *probe = [[AASDLPerfProbe alloc] init];
+        probe->_link = [CADisplayLink displayLinkWithTarget:probe selector:@selector(tick:)];
+        probe->_link.preferredFramesPerSecond = 0; // native refresh rate
+        [probe->_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+        NSLog(@"[PerfProbe] enabled (WITCH_PERF=%s) refreshHz=%ld", on,
+              (long) probe->_link.preferredFramesPerSecond);
+    });
+}
+
+- (void)tick:(CADisplayLink *)link {
+    if (_ticks == 0) {
+        _bucketStart = CACurrentMediaTime();
+    }
+    _ticks++;
+    if (link.targetTimestamp > 0) {
+        double skew = link.timestamp - link.targetTimestamp;
+        if (skew > 0) {
+            _skewSum += skew;
+            _skewCount++;
+        }
+    }
+    if (CACurrentMediaTime() - _bucketStart >= 10.0) {
+        double span = CACurrentMediaTime() - _bucketStart;
+        task_vm_info_data_t vm;
+        mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+        kern_return_t kr = task_info(mach_task_self(), TASK_VM_INFO, (task_info_t) &vm, &count);
+        double resMB = (kr == KERN_SUCCESS) ? (double) vm.resident_size / 1048576.0 : -1.0;
+        double availMB = (double) os_proc_available_memory() / 1048576.0;
+        NSLog(@"[PerfProbe] fps=%.1f/%ld skew=%.1fms res=%.0fMB avail=%.0fMB",
+              _ticks / span, (long) link.preferredFramesPerSecond,
+              _skewCount > 0 ? _skewSum / _skewCount * 1000.0 : 0.0,
+              resMB, availMB);
+        _ticks = 0;
+        _skewSum = 0.0;
+        _skewCount = 0;
+    }
+}
+
+@end
