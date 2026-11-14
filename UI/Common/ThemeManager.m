@@ -268,7 +268,11 @@ static UIImage *DownsampledImageAtPath(NSString *path, CGFloat maxPixel) {
     }
     NSUInteger generation = ++_backgroundBlurGeneration;
     CGFloat radius = _backgroundBlurIntensity;
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+    // Dragging the blur slider asks for a new blur dozens of times a second. Wait a moment, and only the last
+    // request (the one whose generation is still current) does the expensive work, on a low-priority queue.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
+                   dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        if (generation != self->_backgroundBlurGeneration) return;
         CIImage *inputImage = [CIImage imageWithCGImage:cgImage];
         CGRect extent = inputImage.extent;
 
@@ -286,7 +290,10 @@ static UIImage *DownsampledImageAtPath(NSString *path, CGFloat maxPixel) {
 
         // Crop back to the original extent so the (larger) blurred output
         // matches the source image dimensions exactly.
-        CIContext *context = [CIContext contextWithOptions:nil];
+        // One shared context: creating a CIContext per blur allocates a new GPU context each time.
+        static CIContext *context;
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{ context = [CIContext contextWithOptions:nil]; });
         CGImageRef cgImage = [context createCGImage:filter.outputImage fromRect:extent];
         UIImage *blurred = cgImage ? [UIImage imageWithCGImage:cgImage] : nil;
         if (cgImage) CGImageRelease(cgImage);
