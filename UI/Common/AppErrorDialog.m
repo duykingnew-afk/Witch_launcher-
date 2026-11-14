@@ -1,7 +1,7 @@
 #import "AppErrorDialog.h"
-#import "ZalithStyle.h"
 #import "ThemeManager.h"
 #import "AmethystBlurView.h"
+#import "UIView+LiquidGlass.h"
 #import "HapticManager.h"
 #import <objc/runtime.h>
 
@@ -85,11 +85,13 @@
         // key window (which freezes all interaction while the UI still renders).
         UIWindow *window = [[UIWindow alloc] initWithWindowScene:scene];
         window.windowLevel = UIWindowLevelAlert + 1;
+        window.overrideUserInterfaceStyle = ThemeManager.shared.interfaceStyle;
         window.backgroundColor = [UIColor clearColor];
         UIViewController *host = [[UIViewController alloc] init];
         host.view.backgroundColor = [UIColor clearColor];
         window.rootViewController = host;
         window.hidden = NO;
+        [ThemeManager.shared applyUIScaleToAllWindows];
         UIView *root = host.view;
 
         ThemeManager *theme = ThemeManager.shared;
@@ -130,10 +132,12 @@
         UIView *card = [[UIView alloc] init];
         card.translatesAutoresizingMaskIntoConstraints = NO;
         card.backgroundColor = [theme.cardBackgroundColor colorWithAlphaComponent:0.92];
-        card.layer.cornerRadius = ZalithCardRadius();
-        card.layer.borderWidth = 0;
-                card.clipsToBounds = YES;
+        card.layer.cornerRadius = 16;
+        card.layer.borderWidth = 1;
+        card.layer.borderColor = [accent colorWithAlphaComponent:0.45].CGColor;
+        card.clipsToBounds = YES;
         [overlay addSubview:card];
+        [card lg_enableLiquidGlassWithTint:nil cornerRadius:16.0 maskedCorners:kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner | kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner];
 
         UIImageView *iconView = [[UIImageView alloc] init];
         iconView.translatesAutoresizingMaskIntoConstraints = NO;

@@ -1,7 +1,7 @@
 #import "BlurredDialog.h"
-#import "ZalithStyle.h"
 #import "ThemeManager.h"
 #import "AmethystBlurView.h"
+#import "UIView+LiquidGlass.h"
 
 @implementation BlurredDialog
 
@@ -30,10 +30,12 @@
     UIView *card = [[UIView alloc] init];
     card.translatesAutoresizingMaskIntoConstraints = NO;
     card.backgroundColor = [theme.cardBackgroundColor colorWithAlphaComponent:0.82];
-    card.layer.cornerRadius = ZalithCardRadius();
-    card.layer.borderWidth = 0;
-        card.clipsToBounds = YES;
+    card.layer.cornerRadius = 16;
+    card.layer.borderWidth = 1;
+    card.layer.borderColor = [theme.accentColor colorWithAlphaComponent:0.45].CGColor;
+    card.clipsToBounds = YES;
     [overlay addSubview:card];
+    [card lg_enableLiquidGlassWithTint:nil cornerRadius:16.0 maskedCorners:kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner | kCALayerMinXMaxYCorner | kCALayerMaxXMaxYCorner];
 
     UILabel *titleLabel = [[UILabel alloc] init];
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;

@@ -1,6 +1,11 @@
 #import <UIKit/UIKit.h>
 
 extern NSString * const ThemeDidChangeNotification;
+// Posted instead of ThemeDidChangeNotification while the user drags the
+// shell border sliders: only the root shell listens, so redrawing the
+// outline stays cheap. A coalesced full theme broadcast follows shortly
+// after the interaction settles.
+extern NSString * const ShellBorderDidChangeNotification;
 
 @interface ThemeManager : NSObject
 
@@ -31,6 +36,9 @@ extern NSString * const ThemeDidChangeNotification;
 // hardcoded white selected title turns invisible). Preserves each state's
 // font, only fixes colors.
 - (void)styleSegmentedControl:(UISegmentedControl *)seg;
+// Theme a UISearchBar: transparent bar + translucent themed field, so the
+// iOS 26 glass chrome never paints an opaque white row over the theme.
+- (void)styleSearchBar:(UISearchBar *)bar;
 
 @property (nonatomic) UIImage *backgroundImage;
 @property (nonatomic) UIImage *blurredBackgroundImage;
@@ -39,9 +47,21 @@ extern NSString * const ThemeDidChangeNotification;
 @property (nonatomic, readonly) UIColor *contentBackgroundColor;
 @property (nonatomic) CGFloat backgroundBlurIntensity;
 @property (nonatomic) CGFloat uiOpacity;
+// Global visual scale for the launcher shell, browser-zoom style. 1.0 = 100%.
+// Also applies to sheets, pickers and pages presented by the shell and to
+// AppSheet windows; the Minecraft surface and keyboards stay at 100%.
+@property (nonatomic) CGFloat uiScale;
 @property (nonatomic) BOOL uiBorderEnabled;
 // Play the background video's own sound (on by default).
 @property (nonatomic) BOOL backgroundVideoSound;
+
+// Where a picked background (picture or video) lives: the hidden launcher folder, or Documents when that
+// folder is not set up. A video gets a fresh file name every time, so a new one is never written over a
+// file the background player still has open.
++ (NSString *)backgroundStorageDirectory;
++ (NSString *)newBackgroundVideoPath;
+// Delete every saved background video (amethyst_bg*.mp4) except `keep`; nil keeps none.
++ (void)removeBackgroundVideosExceptPath:(NSString *)keep;
 @property (nonatomic, readonly) UIColor *uiBorderColor;
 @property (nonatomic) CGFloat uiBorderWidth;
 @property (nonatomic) CGFloat uiBorderCornerRadius;
@@ -54,12 +74,16 @@ extern NSString * const ThemeDidChangeNotification;
 - (UIColor *)colorOverrideForKey:(NSString *)key darkMode:(BOOL)dark;
 - (void)applyInterfaceStyle:(UIUserInterfaceStyle)style;
 - (void)applyThemeToAllWindows;
-- (void)resetAppearance;
-// Áp theme Embermire của Zalith 2 (palette Material 3 lấy từ source Zalith):
-// bảng màu tối và sáng, bo góc card 28 pt, không viền. Không đụng tới
-// ảnh/video nền của người dùng.
-- (void)applyZalithPreset;
-- (void)broadcastThemeChange;
+- (void)applyUIScaleToAllWindows;
+// Idempotent browser-zoom application for one root view; returns YES when
+// the view changed (used by the shell's layout pass to survive rotation).
+- (BOOL)applyUIScaleToRootView:(UIView *)rootView inWindow:(UIWindow *)window;
+// Build the themed UINavigationBarAppearance and apply it to the appearance
+// proxy plus every live bar in every window, so Done/Save bars follow the
+// user's colors instead of the default system look.
+- (void)applyNavigationBarTheme;
+- (void)resetAppearance;- (void)broadcastThemeChange;
+- (void)notifyShellBorderChange;
 - (void)updateBackgroundBlur;
 - (void)applyBorderStyleToAllWindows;
 - (BOOL)isDarkMode;
