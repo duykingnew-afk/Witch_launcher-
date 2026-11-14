@@ -572,12 +572,28 @@
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    if (_backgroundVideoPlayer && ThemeManager.shared.backgroundVideoURL) [_backgroundVideoPlayer play];
+    ThemeManager *theme = ThemeManager.shared;
+    if (theme.backgroundVideoURL) {
+        if (_backgroundVideoPlayer) [_backgroundVideoPlayer play];
+        else [self setupBackgroundVideo:theme.backgroundVideoURL]; // dropped by a memory warning
+    }
+    if (!_backgroundImageView.image && theme.backgroundImage && !theme.backgroundVideoURL) {
+        _backgroundImageView.image = theme.blurredBackgroundImage ?: theme.backgroundImage;
+    }
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
     [super viewDidDisappear:animated];
     [_backgroundVideoPlayer pause];
+}
+
+- (void)didReceiveMemoryWarning {
+    [super didReceiveMemoryWarning];
+    // The game is running (or about to) and memory is short: let go of what is only decoration.
+    if (self.isViewLoaded && self.view.window == nil) {
+        [self stopBackgroundVideo];
+        _backgroundImageView.image = nil;
+    }
 }
 
 - (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator {
