@@ -1114,6 +1114,7 @@
 "profiles.tab_overview" = "Overview";
 "profiles.tab_worlds" = "Worlds";
 "profiles.tab_packs_short" = "Packs";
+"appearance.bg_video_sound" = "Background video sound";
 "appearance.ui_border" = "UI Border";
 "appearance.border_radius" = "Border radius";
 "appearance.shell_gap" = "Shell edge margin";

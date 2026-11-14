@@ -207,6 +207,15 @@ static UIImage *DownsampledImageAtPath(NSString *path, CGFloat maxPixel) {
     [self broadcastThemeChange];
 }
 
+- (BOOL)backgroundVideoSound {
+    id value = [[NSUserDefaults standardUserDefaults] objectForKey:@"amethyst_bg_video_sound"];
+    return value ? [value boolValue] : YES;
+}
+
+- (void)setBackgroundVideoSound:(BOOL)backgroundVideoSound {
+    [[NSUserDefaults standardUserDefaults] setBool:backgroundVideoSound forKey:@"amethyst_bg_video_sound"];
+}
+
 - (void)setUiBorderEnabled:(BOOL)uiBorderEnabled {
     _uiBorderEnabled = uiBorderEnabled;
     [[NSUserDefaults standardUserDefaults] setBool:uiBorderEnabled forKey:@"amethyst_ui_border_enabled"];

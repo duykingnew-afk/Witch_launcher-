@@ -260,6 +260,7 @@
             @{@"type": @"slider", @"label": localize(@"appearance.left_bar_blur", nil), @"key": @"amethyst_sidebar_blur", @"min": @0, @"max": @100, @"suffix": @"%"},
             @{@"type": @"slider", @"label": localize(@"appearance.right_panel_blur", nil), @"key": @"amethyst_rightpanel_blur", @"min": @0, @"max": @100, @"suffix": @"%"},
             @{@"type": @"slider", @"label": localize(@"appearance.bar_border_thickness", nil), @"key": @"amethyst_bar_border_width", @"min": @0, @"max": @4, @"suffix": @" pt"},
+            @{@"type": @"switch", @"label": localize(@"appearance.bg_video_sound", nil), @"key": @"amethyst_bg_video_sound"},
             @{@"type": @"switch", @"label": localize(@"appearance.ui_border", nil), @"key": @"amethyst_ui_border_enabled"},
             @{@"type": @"slider", @"label": localize(@"appearance.border_radius", nil), @"key": @"amethyst_ui_border_radius", @"min": @0, @"max": @24, @"suffix": @" pt"},
             @{@"type": @"slider", @"label": localize(@"appearance.shell_gap", nil), @"key": @"amethyst_shell_gap", @"min": @0, @"max": @12, @"suffix": @" pt"},
@@ -854,7 +855,9 @@
         if ([item[@"type"] isEqualToString:@"switch"] && [item[@"key"] isKindOfClass:[NSString class]]) {
             BOOL on = [item[@"key"] isEqualToString:@"amethyst_ui_border_enabled"]
                 ? [[NSUserDefaults standardUserDefaults] boolForKey:item[@"key"]]
-                : getPrefBool(item[@"key"]);
+                : [item[@"key"] isEqualToString:@"amethyst_bg_video_sound"]
+                    ? ThemeManager.shared.backgroundVideoSound
+                    : getPrefBool(item[@"key"]);
             detail = [detail stringByAppendingFormat:@" • %@", on ? @"On" : @"Off"];
         }
         cell.detailTextLabel.text = detail;
@@ -1058,6 +1061,8 @@
         UISwitch *sw = (UISwitch *)cell.accessoryView;
         if ([item[@"key"] isEqualToString:@"amethyst_ui_border_enabled"]) {
             sw.on = [[NSUserDefaults standardUserDefaults] boolForKey:@"amethyst_ui_border_enabled"];
+        } else if ([item[@"key"] isEqualToString:@"amethyst_bg_video_sound"]) {
+            sw.on = ThemeManager.shared.backgroundVideoSound;
         } else {
             sw.on = getPrefBool(item[@"key"]);
         }
@@ -1249,7 +1254,11 @@
         return;
     }
     BOOL nowOn;
-    if ([key isEqualToString:@"amethyst_ui_border_enabled"]) {
+    if ([key isEqualToString:@"amethyst_bg_video_sound"]) {
+        nowOn = !ThemeManager.shared.backgroundVideoSound;
+        ThemeManager.shared.backgroundVideoSound = nowOn;
+        [[NSNotificationCenter defaultCenter] postNotificationName:ThemeDidChangeNotification object:nil];
+    } else if ([key isEqualToString:@"amethyst_ui_border_enabled"]) {
         nowOn = ![[NSUserDefaults standardUserDefaults] boolForKey:key];
         ThemeManager.shared.uiBorderEnabled = nowOn;
         [[NSUserDefaults standardUserDefaults] synchronize];
@@ -1307,6 +1316,11 @@
     NSIndexPath *ip = [table indexPathForCell:cell];
     if (!ip) return;
     NSDictionary *item = [self itemAtIndexPath:ip inTable:table];
+    if ([item[@"key"] isEqualToString:@"amethyst_bg_video_sound"]) {
+        ThemeManager.shared.backgroundVideoSound = sender.on;
+        [[NSNotificationCenter defaultCenter] postNotificationName:ThemeDidChangeNotification object:nil];
+        return;
+    }
     setPrefBool(item[@"key"], sender.on);
     if ([item[@"key"] isEqualToString:@"amethyst_ui_border_enabled"]) {
         // UI border lives in NSUserDefaults (ThemeManager reads it from there).

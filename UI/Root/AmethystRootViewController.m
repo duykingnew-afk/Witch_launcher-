@@ -27,6 +27,7 @@
 @property (nonatomic) UIView *backgroundVideoView;
 @property (nonatomic) AVPlayerLayer *backgroundVideoLayer;
 @property (nonatomic) AVPlayer *backgroundVideoPlayer;
+@property (nonatomic) BOOL backgroundVideoSoundSetting; // the sound setting the current player was built with
 @property (nonatomic) BOOL didInitialLayout;
 @property (nonatomic) CAShapeLayer *shellBorder;
 @property (nonatomic) NSUInteger switchToken;
@@ -491,7 +492,7 @@
     }
     if (_backgroundVideoPlayer.currentItem && [_backgroundVideoPlayer.currentItem.asset isKindOfClass:[AVURLAsset class]]) {
         AVURLAsset *asset = (AVURLAsset *)_backgroundVideoPlayer.currentItem.asset;
-        if ([asset.URL.path isEqualToString:videoURL.path]) {
+        if ([asset.URL.path isEqualToString:videoURL.path] && _backgroundVideoSoundSetting == ThemeManager.shared.backgroundVideoSound) {
             if ([self backgroundVideoMayPlay]) [_backgroundVideoPlayer play];
             return;
         }
@@ -508,7 +509,15 @@
 
     // Play only the picture. Videos that carry sound (and ones that do not) then behave the same: no audio
     // track is decoded and the audio session is never touched, so it cannot clash with the game's own audio.
+    BOOL withSound = ThemeManager.shared.backgroundVideoSound &&
+        [asset tracksWithMediaType:AVMediaTypeAudio].count > 0;
     AVPlayerItem *item = nil;
+    if (withSound) {
+        // Ambient + mix: the video's sound plays under other audio and never takes the session from it.
+        AVAudioSession *session = AVAudioSession.sharedInstance;
+        [session setCategory:AVAudioSessionCategoryAmbient withOptions:AVAudioSessionCategoryOptionMixWithOthers error:nil];
+        item = [AVPlayerItem playerItemWithAsset:asset];
+    } else {
     AVMutableComposition *composition = [AVMutableComposition composition];
     AVMutableCompositionTrack *track = [composition addMutableTrackWithMediaType:AVMediaTypeVideo
                                                                 preferredTrackID:kCMPersistentTrackID_Invalid];
@@ -521,16 +530,18 @@
         NSLog(@"[BackgroundVideo] could not strip audio (%@), playing the file as is", error);
         item = [AVPlayerItem playerItemWithAsset:asset];
     }
+    }
     // A background must not pull in more than a small buffer, the game needs the memory.
     item.preferredForwardBufferDuration = 2;
 
     AVPlayer *player = [AVPlayer playerWithPlayerItem:item];
-    player.muted = YES;
-    player.volume = 0;
+    player.muted = !withSound;
+    player.volume = withSound ? 1.0 : 0;
     player.actionAtItemEnd = AVPlayerActionAtItemEndNone;
     player.allowsExternalPlayback = NO;
     player.preventsDisplaySleepDuringVideoPlayback = NO;
     _backgroundVideoPlayer = player;
+    _backgroundVideoSoundSetting = ThemeManager.shared.backgroundVideoSound;
     _backgroundVideoLayer.player = player;
     if ([self backgroundVideoMayPlay]) [player play];
 }

@@ -40,6 +40,8 @@ extern NSString * const ThemeDidChangeNotification;
 @property (nonatomic) CGFloat backgroundBlurIntensity;
 @property (nonatomic) CGFloat uiOpacity;
 @property (nonatomic) BOOL uiBorderEnabled;
+// Play the background video's own sound (on by default).
+@property (nonatomic) BOOL backgroundVideoSound;
 @property (nonatomic, readonly) UIColor *uiBorderColor;
 @property (nonatomic) CGFloat uiBorderWidth;
 @property (nonatomic) CGFloat uiBorderCornerRadius;
