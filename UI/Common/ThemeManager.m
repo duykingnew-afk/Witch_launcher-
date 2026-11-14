@@ -76,7 +76,17 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
 
     NSString *videoPath = [defaults stringForKey:@"amethyst_bg_video"];
     if (videoPath) {
-        _backgroundVideoURL = [NSURL fileURLWithPath:videoPath];
+        // The app container's path changes when the app is reinstalled or updated, so look in Documents by name.
+        NSFileManager *fm = [NSFileManager defaultManager];
+        if (![fm fileExistsAtPath:videoPath]) {
+            NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+            videoPath = [docs stringByAppendingPathComponent:videoPath.lastPathComponent];
+        }
+        if ([fm fileExistsAtPath:videoPath]) {
+            _backgroundVideoURL = [NSURL fileURLWithPath:videoPath];
+        } else {
+            [defaults removeObjectForKey:@"amethyst_bg_video"];
+        }
     }
 }
 
@@ -477,8 +487,11 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSString *imgPath = [paths.firstObject stringByAppendingPathComponent:@"amethyst_bg.png"];
     [[NSFileManager defaultManager] removeItemAtPath:imgPath error:nil];
-    NSString *videoPath = [paths.firstObject stringByAppendingPathComponent:@"amethyst_bg.mp4"];
-    [[NSFileManager defaultManager] removeItemAtPath:videoPath error:nil];
+    for (NSString *name in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:paths.firstObject error:nil]) {
+        if ([name hasPrefix:@"amethyst_bg"] && [name.pathExtension isEqualToString:@"mp4"]) {
+            [[NSFileManager defaultManager] removeItemAtPath:[paths.firstObject stringByAppendingPathComponent:name] error:nil];
+        }
+    }
 
     [self broadcastThemeChange];
 }

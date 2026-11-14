@@ -77,6 +77,8 @@
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(backgroundVideoDidEnd:) name:AVPlayerItemDidPlayToEndTimeNotification object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(backgroundVideoDidEnd:) name:UIApplicationDidBecomeActiveNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(backgroundVideoFailed:) name:AVPlayerItemFailedToPlayToEndTimeNotification object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(pauseBackgroundVideo) name:UIApplicationDidEnterBackgroundNotification object:nil];
 
     _sidebarVC = [[SidebarViewController alloc] init];
     _sidebarVC.delegate = self;
@@ -471,19 +473,70 @@
     }
 }
 
+// The launcher's root view controller is kept alive (tmpRootVC) while the game runs, so the background video
+// must only play while this screen is actually on a window. Otherwise it keeps decoding during the game.
+- (BOOL)backgroundVideoMayPlay {
+    return self.isViewLoaded && self.view.window != nil &&
+        self.view.window.rootViewController == self &&
+        UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
+}
+
 - (void)setupBackgroundVideo:(NSURL *)videoURL {
+    // A missing or unreadable file (e.g. the app container moved after a reinstall) must never reach AVFoundation.
+    if (!videoURL || ![[NSFileManager defaultManager] isReadableFileAtPath:videoURL.path]) {
+        NSLog(@"[BackgroundVideo] file is missing, dropping it: %@", videoURL.path);
+        [self stopBackgroundVideo];
+        ThemeManager.shared.backgroundVideoURL = nil;
+        return;
+    }
     if (_backgroundVideoPlayer.currentItem && [_backgroundVideoPlayer.currentItem.asset isKindOfClass:[AVURLAsset class]]) {
         AVURLAsset *asset = (AVURLAsset *)_backgroundVideoPlayer.currentItem.asset;
         if ([asset.URL.path isEqualToString:videoURL.path]) {
-            [_backgroundVideoPlayer play];
+            if ([self backgroundVideoMayPlay]) [_backgroundVideoPlayer play];
             return;
         }
     }
-    _backgroundVideoPlayer = [AVPlayer playerWithURL:videoURL];
-    _backgroundVideoPlayer.muted = YES;
-    _backgroundVideoPlayer.actionAtItemEnd = AVPlayerActionAtItemEndNone;
-    _backgroundVideoLayer.player = _backgroundVideoPlayer;
-    [_backgroundVideoPlayer play];
+    [self stopBackgroundVideo];
+
+    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:videoURL options:nil];
+    AVAssetTrack *videoTrack = [asset tracksWithMediaType:AVMediaTypeVideo].firstObject;
+    if (!videoTrack || asset.duration.value <= 0) {
+        NSLog(@"[BackgroundVideo] no playable video track in %@", videoURL.path);
+        ThemeManager.shared.backgroundVideoURL = nil;
+        return;
+    }
+
+    // Play only the picture. Videos that carry sound (and ones that do not) then behave the same: no audio
+    // track is decoded and the audio session is never touched, so it cannot clash with the game's own audio.
+    AVPlayerItem *item = nil;
+    AVMutableComposition *composition = [AVMutableComposition composition];
+    AVMutableCompositionTrack *track = [composition addMutableTrackWithMediaType:AVMediaTypeVideo
+                                                                preferredTrackID:kCMPersistentTrackID_Invalid];
+    NSError *error = nil;
+    CMTimeRange range = CMTimeRangeMake(kCMTimeZero, asset.duration);
+    if (track && [track insertTimeRange:range ofTrack:videoTrack atTime:kCMTimeZero error:&error]) {
+        track.preferredTransform = videoTrack.preferredTransform;
+        item = [AVPlayerItem playerItemWithAsset:composition];
+    } else {
+        NSLog(@"[BackgroundVideo] could not strip audio (%@), playing the file as is", error);
+        item = [AVPlayerItem playerItemWithAsset:asset];
+    }
+    // A background must not pull in more than a small buffer, the game needs the memory.
+    item.preferredForwardBufferDuration = 2;
+
+    AVPlayer *player = [AVPlayer playerWithPlayerItem:item];
+    player.muted = YES;
+    player.volume = 0;
+    player.actionAtItemEnd = AVPlayerActionAtItemEndNone;
+    player.allowsExternalPlayback = NO;
+    player.preventsDisplaySleepDuringVideoPlayback = NO;
+    _backgroundVideoPlayer = player;
+    _backgroundVideoLayer.player = player;
+    if ([self backgroundVideoMayPlay]) [player play];
+}
+
+- (void)pauseBackgroundVideo {
+    [_backgroundVideoPlayer pause];
 }
 
 - (void)stopBackgroundVideo {
@@ -492,16 +545,39 @@
     _backgroundVideoPlayer = nil;
 }
 
+- (void)backgroundVideoFailed:(NSNotification *)notification {
+    if (notification.object != _backgroundVideoPlayer.currentItem) return;
+    NSLog(@"[BackgroundVideo] playback failed: %@", notification.userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey]);
+    [self stopBackgroundVideo];
+    _backgroundVideoView.hidden = YES;
+}
+
 - (void)backgroundVideoDidEnd:(NSNotification *)notification {
     if (notification.name == AVPlayerItemDidPlayToEndTimeNotification) {
         AVPlayerItem *item = notification.object;
         if (item != _backgroundVideoPlayer.currentItem) return;
     }
-    if (_backgroundVideoPlayer && _backgroundVideoPlayer.currentItem) {
-        [_backgroundVideoPlayer seekToTime:kCMTimeZero toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL finished) {
-            [_backgroundVideoPlayer play];
-        }];
+    AVPlayer *player = _backgroundVideoPlayer;
+    if (!player || !player.currentItem) return;
+    if (![self backgroundVideoMayPlay]) {
+        [player pause];
+        return;
     }
+    __weak AVPlayer *weakPlayer = player;
+    [player seekToTime:kCMTimeZero toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(BOOL finished) {
+        AVPlayer *strongPlayer = weakPlayer;
+        if (finished && strongPlayer) [strongPlayer play];
+    }];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    if (_backgroundVideoPlayer && ThemeManager.shared.backgroundVideoURL) [_backgroundVideoPlayer play];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    [_backgroundVideoPlayer pause];
 }
 
 - (void)viewWillTransitionToSize:(CGSize)size withTransitionCoordinator:(id<UIViewControllerTransitionCoordinator>)coordinator {
@@ -840,6 +916,7 @@
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+    [_backgroundVideoPlayer pause];
 }
 
 @end
