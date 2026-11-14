@@ -260,6 +260,7 @@
             @{@"type": @"slider", @"label": localize(@"appearance.left_bar_blur", nil), @"key": @"amethyst_sidebar_blur", @"min": @0, @"max": @100, @"suffix": @"%"},
             @{@"type": @"slider", @"label": localize(@"appearance.right_panel_blur", nil), @"key": @"amethyst_rightpanel_blur", @"min": @0, @"max": @100, @"suffix": @"%"},
             @{@"type": @"slider", @"label": localize(@"appearance.bar_border_thickness", nil), @"key": @"amethyst_bar_border_width", @"min": @0, @"max": @4, @"suffix": @" pt"},
+            @{@"type": @"switch", @"label": localize(@"appearance.bg_video_sound", nil), @"key": @"amethyst_bg_video_sound"},
             @{@"type": @"switch", @"label": localize(@"appearance.ui_border", nil), @"key": @"amethyst_ui_border_enabled"},
             @{@"type": @"slider", @"label": localize(@"appearance.border_radius", nil), @"key": @"amethyst_ui_border_radius", @"min": @0, @"max": @24, @"suffix": @" pt"},
             @{@"type": @"slider", @"label": localize(@"appearance.shell_gap", nil), @"key": @"amethyst_shell_gap", @"min": @0, @"max": @12, @"suffix": @" pt"},
@@ -854,7 +855,9 @@
         if ([item[@"type"] isEqualToString:@"switch"] && [item[@"key"] isKindOfClass:[NSString class]]) {
             BOOL on = [item[@"key"] isEqualToString:@"amethyst_ui_border_enabled"]
                 ? [[NSUserDefaults standardUserDefaults] boolForKey:item[@"key"]]
-                : getPrefBool(item[@"key"]);
+                : [item[@"key"] isEqualToString:@"amethyst_bg_video_sound"]
+                    ? ThemeManager.shared.backgroundVideoSound
+                    : getPrefBool(item[@"key"]);
             detail = [detail stringByAppendingFormat:@" • %@", on ? @"On" : @"Off"];
         }
         cell.detailTextLabel.text = detail;
@@ -1058,6 +1061,8 @@
         UISwitch *sw = (UISwitch *)cell.accessoryView;
         if ([item[@"key"] isEqualToString:@"amethyst_ui_border_enabled"]) {
             sw.on = [[NSUserDefaults standardUserDefaults] boolForKey:@"amethyst_ui_border_enabled"];
+        } else if ([item[@"key"] isEqualToString:@"amethyst_bg_video_sound"]) {
+            sw.on = ThemeManager.shared.backgroundVideoSound;
         } else {
             sw.on = getPrefBool(item[@"key"]);
         }
@@ -1249,7 +1254,11 @@
         return;
     }
     BOOL nowOn;
-    if ([key isEqualToString:@"amethyst_ui_border_enabled"]) {
+    if ([key isEqualToString:@"amethyst_bg_video_sound"]) {
+        nowOn = !ThemeManager.shared.backgroundVideoSound;
+        ThemeManager.shared.backgroundVideoSound = nowOn;
+        [[NSNotificationCenter defaultCenter] postNotificationName:ThemeDidChangeNotification object:nil];
+    } else if ([key isEqualToString:@"amethyst_ui_border_enabled"]) {
         nowOn = ![[NSUserDefaults standardUserDefaults] boolForKey:key];
         ThemeManager.shared.uiBorderEnabled = nowOn;
         [[NSUserDefaults standardUserDefaults] synchronize];
@@ -1307,6 +1316,11 @@
     NSIndexPath *ip = [table indexPathForCell:cell];
     if (!ip) return;
     NSDictionary *item = [self itemAtIndexPath:ip inTable:table];
+    if ([item[@"key"] isEqualToString:@"amethyst_bg_video_sound"]) {
+        ThemeManager.shared.backgroundVideoSound = sender.on;
+        [[NSNotificationCenter defaultCenter] postNotificationName:ThemeDidChangeNotification object:nil];
+        return;
+    }
     setPrefBool(item[@"key"], sender.on);
     if ([item[@"key"] isEqualToString:@"amethyst_ui_border_enabled"]) {
         // UI border lives in NSUserDefaults (ThemeManager reads it from there).
@@ -1755,6 +1769,26 @@
     }
 }
 
+// Every picked video gets its own file name. Reusing one name overwrote a file the background player still had
+// open, and the player kept the stale item (or crashed) when the new video arrived.
+- (NSString *)newBackgroundVideoPath {
+    NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    NSString *name = [NSString stringWithFormat:@"amethyst_bg_%llu.mp4", (unsigned long long)([NSDate date].timeIntervalSince1970 * 1000)];
+    return [docs stringByAppendingPathComponent:name];
+}
+
+// Delete every saved background video except `keep` (pass nil to delete all).
+- (void)removeBackgroundVideosExcept:(NSString *)keep {
+    NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *name in [fm contentsOfDirectoryAtPath:docs error:nil]) {
+        if (![name hasPrefix:@"amethyst_bg"] || ![name.pathExtension isEqualToString:@"mp4"]) continue;
+        NSString *path = [docs stringByAppendingPathComponent:name];
+        if (keep && [path isEqualToString:keep]) continue;
+        [fm removeItemAtPath:path error:nil];
+    }
+}
+
 - (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
     [picker dismissViewControllerAnimated:YES completion:nil];
     if (results.count == 0) return;
@@ -1764,9 +1798,8 @@
     if ([provider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier]) {
         [provider loadFileRepresentationForTypeIdentifier:UTTypeMovie.identifier completionHandler:^(NSURL *url, NSError *error) {
             if (error || !url) return;
-            NSString *destPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject stringByAppendingPathComponent:@"amethyst_bg.mp4"];
+            NSString *destPath = [self newBackgroundVideoPath];
             NSFileManager *fm = [NSFileManager defaultManager];
-            [fm removeItemAtPath:destPath error:nil];
             BOOL access = [url startAccessingSecurityScopedResource];
             NSError *copyError = nil;
             BOOL ok = [fm copyItemAtURL:url toURL:[NSURL fileURLWithPath:destPath] error:&copyError];
@@ -1784,7 +1817,7 @@
                     return;
                 }
                 ThemeManager.shared.backgroundVideoURL = [NSURL fileURLWithPath:destPath];
-                [ThemeManager.shared broadcastThemeChange];
+                [self removeBackgroundVideosExcept:destPath];
             });
         }];
     } else {
@@ -1829,12 +1862,8 @@
 }
 
 - (void)saveBackgroundVideo:(NSURL *)videoURL {
-    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
-    NSString *docsPath = paths.firstObject;
-    NSString *destPath = [docsPath stringByAppendingPathComponent:@"amethyst_bg.mp4"];
-
+    NSString *destPath = [self newBackgroundVideoPath];
     NSFileManager *fm = [NSFileManager defaultManager];
-    [fm removeItemAtPath:destPath error:nil];
 
     BOOL access = [videoURL startAccessingSecurityScopedResource];
     NSError *error = nil;
@@ -1854,7 +1883,7 @@
         return;
     }
     ThemeManager.shared.backgroundVideoURL = [NSURL fileURLWithPath:destPath];
-    [ThemeManager.shared broadcastThemeChange];
+    [self removeBackgroundVideosExcept:destPath];
 }
 
 - (void)removeBackgroundImage {
@@ -1864,8 +1893,7 @@
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSString *imgPath = [paths.firstObject stringByAppendingPathComponent:@"amethyst_bg.png"];
     [[NSFileManager defaultManager] removeItemAtPath:imgPath error:nil];
-    NSString *videoPath = [paths.firstObject stringByAppendingPathComponent:@"amethyst_bg.mp4"];
-    [[NSFileManager defaultManager] removeItemAtPath:videoPath error:nil];
+    [self removeBackgroundVideosExcept:nil];
 
     [ThemeManager.shared broadcastThemeChange];
 }

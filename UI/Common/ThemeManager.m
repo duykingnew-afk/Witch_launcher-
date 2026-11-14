@@ -1,5 +1,6 @@
 #import "ThemeManager.h"
 #import <CoreImage/CoreImage.h>
+#import <ImageIO/ImageIO.h>
 
 NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
 
@@ -8,6 +9,47 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
 @property (nonatomic) NSMutableDictionary *colorOverrides;
 @property (nonatomic) NSUInteger backgroundBlurGeneration;
 @end
+
+
+// A phone photo is 12+ megapixels: ~50 MB decoded, and the blurred copy doubles it. The launcher only ever
+// shows the picture at screen size, and the game needs that memory, so keep at most this many pixels on the
+// longest side.
+static const CGFloat kBackgroundMaxPixel = 1920;
+
+static UIImage *DownsampledImage(UIImage *image, CGFloat maxPixel) {
+    if (!image) return nil;
+    CGSize px = CGSizeMake(image.size.width * image.scale, image.size.height * image.scale);
+    CGFloat longest = MAX(px.width, px.height);
+    if (longest <= maxPixel) return image;
+    CGFloat ratio = maxPixel / longest;
+    CGSize target = CGSizeMake(floor(px.width * ratio), floor(px.height * ratio));
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    format.opaque = NO;
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:target format:format];
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+        [image drawInRect:CGRectMake(0, 0, target.width, target.height)];
+    }];
+}
+
+// Decode a file straight to a small bitmap, never holding the full-size image in memory.
+static UIImage *DownsampledImageAtPath(NSString *path, CGFloat maxPixel) {
+    NSURL *url = [NSURL fileURLWithPath:path];
+    CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL);
+    if (!source) return nil;
+    NSDictionary *options = @{
+        (id)kCGImageSourceCreateThumbnailFromImageAlways: @YES,
+        (id)kCGImageSourceCreateThumbnailWithTransform: @YES,
+        (id)kCGImageSourceShouldCacheImmediately: @YES,
+        (id)kCGImageSourceThumbnailMaxPixelSize: @(maxPixel),
+    };
+    CGImageRef cg = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
+    CFRelease(source);
+    if (!cg) return nil;
+    UIImage *image = [UIImage imageWithCGImage:cg];
+    CGImageRelease(cg);
+    return image;
+}
 
 @implementation ThemeManager
 
@@ -70,13 +112,23 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
 
     NSString *imgPath = [defaults stringForKey:@"amethyst_bg_image"];
     if (imgPath) {
-        _backgroundImage = [UIImage imageWithContentsOfFile:imgPath];
+        _backgroundImage = DownsampledImageAtPath(imgPath, kBackgroundMaxPixel) ?: [UIImage imageWithContentsOfFile:imgPath];
         [self processBackgroundBlur];
     }
 
     NSString *videoPath = [defaults stringForKey:@"amethyst_bg_video"];
     if (videoPath) {
-        _backgroundVideoURL = [NSURL fileURLWithPath:videoPath];
+        // The app container's path changes when the app is reinstalled or updated, so look in Documents by name.
+        NSFileManager *fm = [NSFileManager defaultManager];
+        if (![fm fileExistsAtPath:videoPath]) {
+            NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+            videoPath = [docs stringByAppendingPathComponent:videoPath.lastPathComponent];
+        }
+        if ([fm fileExistsAtPath:videoPath]) {
+            _backgroundVideoURL = [NSURL fileURLWithPath:videoPath];
+        } else {
+            [defaults removeObjectForKey:@"amethyst_bg_video"];
+        }
     }
 }
 
@@ -114,6 +166,7 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
 }
 
 - (void)setBackgroundImage:(UIImage *)backgroundImage {
+    backgroundImage = DownsampledImage(backgroundImage, kBackgroundMaxPixel);
     _backgroundImage = backgroundImage;
     _blurredBackgroundImage = nil;
     _backgroundVideoURL = nil;
@@ -152,6 +205,15 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
         [self processBackgroundBlur];
     }
     [self broadcastThemeChange];
+}
+
+- (BOOL)backgroundVideoSound {
+    id value = [[NSUserDefaults standardUserDefaults] objectForKey:@"amethyst_bg_video_sound"];
+    return value ? [value boolValue] : YES;
+}
+
+- (void)setBackgroundVideoSound:(BOOL)backgroundVideoSound {
+    [[NSUserDefaults standardUserDefaults] setBool:backgroundVideoSound forKey:@"amethyst_bg_video_sound"];
 }
 
 - (void)setUiBorderEnabled:(BOOL)uiBorderEnabled {
@@ -206,7 +268,11 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
     }
     NSUInteger generation = ++_backgroundBlurGeneration;
     CGFloat radius = _backgroundBlurIntensity;
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+    // Dragging the blur slider asks for a new blur dozens of times a second. Wait a moment, and only the last
+    // request (the one whose generation is still current) does the expensive work, on a low-priority queue.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
+                   dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        if (generation != self->_backgroundBlurGeneration) return;
         CIImage *inputImage = [CIImage imageWithCGImage:cgImage];
         CGRect extent = inputImage.extent;
 
@@ -224,7 +290,10 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
 
         // Crop back to the original extent so the (larger) blurred output
         // matches the source image dimensions exactly.
-        CIContext *context = [CIContext contextWithOptions:nil];
+        // One shared context: creating a CIContext per blur allocates a new GPU context each time.
+        static CIContext *context;
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{ context = [CIContext contextWithOptions:nil]; });
         CGImageRef cgImage = [context createCGImage:filter.outputImage fromRect:extent];
         UIImage *blurred = cgImage ? [UIImage imageWithCGImage:cgImage] : nil;
         if (cgImage) CGImageRelease(cgImage);
@@ -477,8 +546,11 @@ NSString * const ThemeDidChangeNotification = @"ThemeDidChangeNotification";
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     NSString *imgPath = [paths.firstObject stringByAppendingPathComponent:@"amethyst_bg.png"];
     [[NSFileManager defaultManager] removeItemAtPath:imgPath error:nil];
-    NSString *videoPath = [paths.firstObject stringByAppendingPathComponent:@"amethyst_bg.mp4"];
-    [[NSFileManager defaultManager] removeItemAtPath:videoPath error:nil];
+    for (NSString *name in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:paths.firstObject error:nil]) {
+        if ([name hasPrefix:@"amethyst_bg"] && [name.pathExtension isEqualToString:@"mp4"]) {
+            [[NSFileManager defaultManager] removeItemAtPath:[paths.firstObject stringByAppendingPathComponent:name] error:nil];
+        }
+    }
 
     [self broadcastThemeChange];
 }
