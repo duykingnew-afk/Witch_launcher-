@@ -872,6 +872,35 @@
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     ModCell *cell = [tableView dequeueReusableCellWithIdentifier:@"ModCell" forIndexPath:indexPath];
+    NSDictionary *item = [self itemsInSection:indexPath.section][indexPath.row];
+    cell.installState = [self installStateForMod:item];
+    [cell configureWithDict:item];
+    __weak typeof(self) weakSelf = self;
+    cell.onVersionTap = ^(NSDictionary *mod, UIButton *sender) {
+        [weakSelf showVersionSelectorForMod:mod fromButton:sender];
+    };
+    cell.onDownloadTap = ^(NSDictionary *mod, UIButton *sender) {
+        [weakSelf showDownloadPopupForMod:mod fromButton:sender];
+    };
+    return cell;
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    return [self showsFeaturedSection] ? 2 : 1;
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    return ([self showsFeaturedSection] && section == 0) ? localize(@"Recommended", nil) : nil;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    [HapticManager.shared play:HapticTypeLight];
+    ModDetailViewController *detail = [[ModDetailViewController alloc] initWithMod:[self itemsInSection:indexPath.section][indexPath.row]];
+    detail.coordinator = self.coordinator;
+    [self.navigationController pushViewController:detail animated:YES];
+}
+
 #pragma mark - Featured mods
 
 // Mod đề xuất trên Modrinth, lấy theo slug. Hiện ở mục riêng phía trên danh
@@ -927,35 +956,6 @@ static NSArray<NSString *> *WitchFeaturedModSlugs(void) {
         return _featuredMods;
     }
     return _mods;
-}
-
-    cell.installState = [self installStateForMod:mod];
-    [cell configureWithDict:mod];
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
-    return [self showsFeaturedSection] ? 2 : 1;
-}
-
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return ([self showsFeaturedSection] && section == 0) ? localize(@"Recommended", nil) : nil;
-}
-
-    __weak typeof(self) weakSelf = self;
-    cell.onVersionTap = ^(NSDictionary *mod, UIButton *sender) {
-        [weakSelf showVersionSelectorForMod:mod fromButton:sender];
-    };
-    cell.onDownloadTap = ^(NSDictionary *mod, UIButton *sender) {
-    NSDictionary *mod = [self itemsInSection:indexPath.section][indexPath.row];
-        [weakSelf showDownloadPopupForMod:mod fromButton:sender];
-    };
-    return cell;
-}
-
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-    [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    [HapticManager.shared play:HapticTypeLight];
-    ModDetailViewController *detail = [[ModDetailViewController alloc] initWithMod:[self itemsInSection:indexPath.section][indexPath.row]];
-    detail.coordinator = self.coordinator;
-    [self.navigationController pushViewController:detail animated:YES];
 }
 
 #pragma mark - Side panel actions

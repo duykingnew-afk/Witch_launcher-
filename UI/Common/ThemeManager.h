@@ -82,7 +82,8 @@ extern NSString * const ShellBorderDidChangeNotification;
 // proxy plus every live bar in every window, so Done/Save bars follow the
 // user's colors instead of the default system look.
 - (void)applyNavigationBarTheme;
-- (void)resetAppearance;- (void)broadcastThemeChange;
+- (void)resetAppearance;
+- (void)broadcastThemeChange;
 - (void)notifyShellBorderChange;
 - (void)updateBackgroundBlur;
 - (void)applyBorderStyleToAllWindows;
