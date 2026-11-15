@@ -129,6 +129,7 @@
         }.mutableCopy,
         @"appearance": @{
             @"launch_splash": @NO,
+            @"launch_music": @YES,
         }.mutableCopy,
         @"java": @{
             @"java_homes": @{

@@ -1524,6 +1524,17 @@
 
 "appearance.splash_blur" = "Splash background blur";
 
+"appearance.launch_music" = "Music while loading";
+"appearance.launch_music_file" = "Loading music";
+"launch_music.choose" = "Choose music from Files";
+"launch_music.preview" = "Play / stop preview";
+"launch_music.remove" = "Remove all music";
+"launch_music.status_none" = "None";
+"launch_music.status_builtin" = "Built-in";
+"launch_music.status_many" = "%lu tracks";
+"launch_music.bad_files" = "These files cannot be used (use mp3, m4a, aac, wav, caf, aiff or flac): %@";
+"launch_music.nothing_to_play" = "Choose a music file first.";
+
 "account.screen.title" = "Account";
 "account.screen.subtitle" = "Manage your accounts";
 "account.screen.no_accounts" = "No accounts yet";

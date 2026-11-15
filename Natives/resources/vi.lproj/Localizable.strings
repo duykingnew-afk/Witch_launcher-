@@ -1519,6 +1519,17 @@
 
 "appearance.splash_blur" = "Độ mờ nền màn hình chờ";
 
+"appearance.launch_music" = "Nhạc khi chờ vào game";
+"appearance.launch_music_file" = "Nhạc chờ";
+"launch_music.choose" = "Chọn nhạc từ Tệp";
+"launch_music.preview" = "Nghe thử / Dừng";
+"launch_music.remove" = "Xóa hết nhạc";
+"launch_music.status_none" = "Chưa có";
+"launch_music.status_builtin" = "Có sẵn trong app";
+"launch_music.status_many" = "%lu bài";
+"launch_music.bad_files" = "Không dùng được các tệp này (dùng mp3, m4a, aac, wav, caf, aiff hoặc flac): %@";
+"launch_music.nothing_to_play" = "Hãy chọn một tệp nhạc trước.";
+
 "account.screen.title" = "Tài khoản";
 "account.screen.subtitle" = "Quản lý tài khoản của bạn";
 "account.screen.no_accounts" = "Chưa có tài khoản nào";
