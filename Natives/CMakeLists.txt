@@ -319,7 +319,6 @@ add_executable(Witch
   SurfaceViewController+HangDetect.m
   SurfaceViewController+LaunchSplash.m
   LaunchSplashView.m
-  WitchLaunchMusic.m
   WitchLogOverlay.m
   WitchScrollingLogView.m
   GameLaunchChecks.m

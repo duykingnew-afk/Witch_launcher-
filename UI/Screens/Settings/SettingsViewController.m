@@ -12,7 +12,6 @@
 #import "UIView+LiquidGlass.h"
 #import "AppSheet.h"
 #import "FontManager.h"
-#import "WitchLaunchMusic.h"
 #import <PhotosUI/PhotosUI.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
@@ -387,8 +386,6 @@ static BOOL isPercentPrefKey(NSString *key) {
             @{@"type": @"switch", @"label": localize(@"appearance.launch_splash", nil), @"key": @"appearance.launch_splash"},
             @{@"type": @"splash", @"label": localize(@"appearance.splash_background", nil)},
             @{@"type": @"slider", @"label": localize(@"appearance.splash_blur", nil), @"key": @"appearance.splash_blur", @"min": @0, @"max": @100, @"suffix": @"%"},
-            @{@"type": @"switch", @"label": localize(@"appearance.launch_music", nil), @"key": @"appearance.launch_music"},
-            @{@"type": @"launchmusic", @"label": localize(@"appearance.launch_music_file", nil)},
             @{@"type": @"switch", @"label": localize(@"preference.title.log_auto_scroll", nil), @"key": @"general.log_auto_scroll"},
             @{@"type": @"slider", @"label": localize(@"preference.title.log_scroll_speed", nil), @"key": @"general.log_scroll_speed", @"min": @25, @"max": @300, @"suffix": @"%"},
             @{@"type": @"font", @"label": localize(@"appearance.launcher_font", nil)},
@@ -1251,7 +1248,7 @@ static BOOL isPercentPrefKey(NSString *key) {
             cell.backgroundColor = ThemeManager.shared.cardBackgroundColor;
             cell.textLabel.textColor = ThemeManager.shared.primaryTextColor;
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-        } else if ([type isEqualToString:@"splash"] || [type isEqualToString:@"launchmusic"]) {
+        } else if ([type isEqualToString:@"splash"]) {
             cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:cellId];
             cell.textLabel.font = [UIFont systemFontOfSize:15];
             cell.detailTextLabel.font = [UIFont systemFontOfSize:14];
@@ -1293,7 +1290,7 @@ static BOOL isPercentPrefKey(NSString *key) {
 
     cell.textLabel.text = nil;
     cell.detailTextLabel.text = nil;
-    if ([type isEqualToString:@"switch"] || [type isEqualToString:@"picker"] || [type isEqualToString:@"navigate"] || [type isEqualToString:@"color"] || [type isEqualToString:@"image"] || [type isEqualToString:@"splash"] || [type isEqualToString:@"launchmusic"] || [type isEqualToString:@"export"] || [type isEqualToString:@"import"] || [type isEqualToString:@"credit"] || [type isEqualToString:@"author"] || [type isEqualToString:@"link"] || [type isEqualToString:@"label"] || [type isEqualToString:@"font"]) {
+    if ([type isEqualToString:@"switch"] || [type isEqualToString:@"picker"] || [type isEqualToString:@"navigate"] || [type isEqualToString:@"color"] || [type isEqualToString:@"image"] || [type isEqualToString:@"splash"] || [type isEqualToString:@"export"] || [type isEqualToString:@"import"] || [type isEqualToString:@"credit"] || [type isEqualToString:@"author"] || [type isEqualToString:@"link"] || [type isEqualToString:@"label"] || [type isEqualToString:@"font"]) {
         cell.textLabel.text = item[@"label"];
     }
 
@@ -1315,9 +1312,6 @@ static BOOL isPercentPrefKey(NSString *key) {
         cell.accessoryView = nil;
     } else if ([type isEqualToString:@"splash"]) {
         cell.detailTextLabel.text = [self splashMediaStatus];
-        cell.accessoryView = nil;
-    } else if ([type isEqualToString:@"launchmusic"]) {
-        cell.detailTextLabel.text = [WitchLaunchMusic statusText];
         cell.accessoryView = nil;
     } else if ([type isEqualToString:@"font"]) {
         cell.detailTextLabel.text = [FontManager shared].displayName;
@@ -1452,8 +1446,6 @@ static BOOL isPercentPrefKey(NSString *key) {
             [self showImagePicker];
         } else if ([type isEqualToString:@"splash"]) {
             [self showSplashPicker];
-        } else if ([type isEqualToString:@"launchmusic"]) {
-            [self showLaunchMusicPicker];
         } else if ([type isEqualToString:@"export"]) {
             [self exportAppearance];
         } else if ([type isEqualToString:@"import"]) {
@@ -1502,8 +1494,6 @@ static BOOL isPercentPrefKey(NSString *key) {
         [self showImagePicker];
     } else if ([type isEqualToString:@"splash"]) {
         [self showSplashPicker];
-    } else if ([type isEqualToString:@"launchmusic"]) {
-        [self showLaunchMusicPicker];
     } else if ([type isEqualToString:@"font"]) {
         [self showFontMenu];
     } else if ([type isEqualToString:@"export"]) {
@@ -2135,35 +2125,6 @@ static BOOL isPercentPrefKey(NSString *key) {
             [self openPhotoLibraryWithFilter:[PHPickerFilter videosFilter]];
         } else if (idx == 2) {
             [self clearSplashMedia];
-        }
-    }];
-}
-
-// Music for the wait while a version boots. The files live in Documents/LaunchMusic (WitchLaunchMusic), not in
-// Documents/Splash, because choosing or removing splash media wipes that folder.
-- (void)showLaunchMusicPicker {
-    [AppSheet showOptionsWithTitle:localize(@"appearance.launch_music_file", nil)
-                           message:[WitchLaunchMusic statusText]
-                           options:@[
-        @{@"title": localize(@"launch_music.choose", nil), @"icon": @"music.note.list"},
-        @{@"title": localize(@"launch_music.preview", nil), @"icon": @"play.circle"},
-        @{@"title": localize(@"launch_music.remove", nil), @"icon": @"trash", @"destructive": @YES},
-        @{@"title": localize(@"Done", nil), @"icon": @"checkmark"},
-    ] selectedIndex:NSNotFound selection:^(NSInteger idx) {
-        if (idx == 0) {
-            [WitchLaunchMusic stopWithFade:NO];
-            [WitchLaunchMusic presentPickerFromViewController:self completion:^(NSUInteger added) {
-                if (added > 0) [HapticManager.shared play:HapticTypeLight];
-                [self reloadTables];
-            }];
-        } else if (idx == 1) {
-            if (![WitchLaunchMusic togglePreview]) {
-                showDialog(localize(@"appearance.launch_music_file", nil), localize(@"launch_music.nothing_to_play", nil));
-            }
-        } else if (idx == 2) {
-            [WitchLaunchMusic removeAllTracks];
-            [HapticManager.shared play:HapticTypeLight];
-            [self reloadTables];
         }
     }];
 }

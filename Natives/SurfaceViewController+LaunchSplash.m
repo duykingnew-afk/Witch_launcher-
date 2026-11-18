@@ -3,7 +3,6 @@
 #import "LaunchSplashView.h"
 #import "LauncherPreferences.h"
 #import "WitchLogOverlay.h"
-#import "WitchLaunchMusic.h"
 #import <QuartzCore/QuartzCore.h>
 
 static NSTimer *launchSplashTimer;
@@ -33,19 +32,13 @@ static __weak LaunchSplashView *launchSplashView;
 
 - (void)presentLaunchSplash {
     [self dismissLaunchSplash];
-    BOOL showSplash = getPrefBool(@"appearance.launch_splash");
-    // The music belongs to the wait itself, so it plays even when the splash screen is switched off.
-    BOOL playMusic = [WitchLaunchMusic canPlay];
-    if (!showSplash && !playMusic) return;
+    if (!getPrefBool(@"appearance.launch_splash")) return;
     launchSplashBaselineSwap = pojavSwapCount();
-    if (showSplash) {
-        LaunchSplashView *splash = [[LaunchSplashView alloc] initWithFrame:self.view.bounds];
-        splash.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-        [self.view addSubview:splash];
-        launchSplashView = splash;
-        [splash startAnimating];
-    }
-    if (playMusic) [WitchLaunchMusic start];
+    LaunchSplashView *splash = [[LaunchSplashView alloc] initWithFrame:self.view.bounds];
+    splash.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self.view addSubview:splash];
+    launchSplashView = splash;
+    [splash startAnimating];
 
     __weak typeof(self) weakSelf = self;
     launchSplashTimer = [NSTimer timerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer) {
@@ -59,8 +52,6 @@ static __weak LaunchSplashView *launchSplashView;
 - (void)dismissLaunchSplash {
     [launchSplashTimer invalidate];
     launchSplashTimer = nil;
-    // The wait is over: the music fades out while the splash plays its exit animation.
-    [WitchLaunchMusic stopWithFade:YES];
     // With the in-game overlay log disabled, hide any log the user opened on
     // the splash so they are not left with a floating log they cannot close.
     if (!getPrefBool(@"general.overlay_log_in_game")) {
