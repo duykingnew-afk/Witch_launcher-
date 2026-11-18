@@ -1161,9 +1161,8 @@ static GameSurfaceView* pojavWindow;
 
         if (touchEvent == self.hotbarTouch && self.slideableHotbar && ![self isTouchInactive:self.hotbarTouch]) {
             CGPoint hotbarPoint = [touchEvent locationInView:self.surfaceView];
-            CGFloat screenScale = self.screenScale;
             int slot = self.enableHotbarGestures ?
-            callback_SurfaceViewController_touchHotbar(hotbarPoint.x * screenScale, hotbarPoint.y * screenScale) : -1;
+            callback_SurfaceViewController_touchHotbar(hotbarPoint.x, hotbarPoint.y) : -1;
             /* Select on the initial press too. Previously currentHotbarSlot
              * was set in touchesBegan, so this condition was false for the
              * first slot and a drag that never crossed a slot boundary (most
@@ -1230,18 +1229,29 @@ static GameSurfaceView* pojavWindow;
         [self.inputTextField resignFirstResponder];
         self.inputTextField.text = @" ";
     }
+    // When a GUI screen is open (mouse grab released) text-producing keys go
+    // through the Telex engine, which composes Vietnamese and sends
+    // chars/backspaces to the game. During gameplay only keycodes are sent
+    // (movement, menus), as before.
+    BOOL telexActive = (isInputReady && isGrabbing != JNI_TRUE);
     for (UIPress *press in presses) {
         if (press.key != nil) {
             // A physical key press proves a hardware keyboard is attached.
             if (!hardwareKeyboardSeen) {
                 hardwareKeyboardSeen = true;
             }
-            // When a GUI screen is open (mouse grab released) text-producing
-            // keys go through the Telex engine, which composes Vietnamese and
-            // sends chars/backspaces to the game. During gameplay only
-            // keycodes are sent (movement, menus), as before.
-            if (isInputReady && isGrabbing != JNI_TRUE) {
-                [TelexInput handleKey:press.key];
+            if (telexActive) {
+                BOOL consumed = [TelexInput handleKey:press.key
+                                        inputLanguage:self.textInputMode.primaryLanguage];
+                if (consumed) {
+                    // The engine already sent the delete events to the game.
+                    // Forwarding the raw key event would delete a second
+                    // character, and UIKit may still deliver the same key to
+                    // the tracked field: tell it to ignore that change.
+                    self.inputTextField.ignoreNextTextChange = YES;
+                    handled = YES;
+                    continue;
+                }
             }
             if ([KeyboardInput sendKeyEvent:press.key down:YES sendChars:NO]) {
                 handled = YES;
@@ -1255,8 +1265,15 @@ static GameSurfaceView* pojavWindow;
 
 - (void)pressesEnded:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
     BOOL handled = NO;
+    BOOL telexActive = (isInputReady && isGrabbing != JNI_TRUE);
     for (UIPress *press in presses) {
-        if (press.key != nil && [KeyboardInput sendKeyEvent:press.key down:NO sendChars:NO]) {
+        if (press.key == nil) continue;
+        // The press was consumed by the Telex engine (and never forwarded),
+        // so the release must not be sent either.
+        if (telexActive && [TelexInput consumesKey:press.key]) {
+            continue;
+        }
+        if ([KeyboardInput sendKeyEvent:press.key down:NO sendChars:NO]) {
             handled = YES;
         }
     }
@@ -1341,10 +1358,9 @@ static GameSurfaceView* pojavWindow;
     }
     
     if (sender.state == UIGestureRecognizerStateRecognized && isGrabbing) {
-        CGFloat screenScale = self.screenScale;
         CGPoint point = [sender locationInView:self.surfaceView];
         int hotbarSlot = self.enableHotbarGestures ?
-            callback_SurfaceViewController_touchHotbar(point.x * screenScale, point.y * screenScale) : -1;
+            callback_SurfaceViewController_touchHotbar(point.x, point.y) : -1;
         if (self.enableDoubleTapOffhand && hotbarSlot != -1 && currentHotbarSlot == hotbarSlot) {
             CallbackBridge_nativeSendKey(GLFW_KEY_F, 0, 1, 0);
             CallbackBridge_nativeSendKey(GLFW_KEY_F, 0, 0, 0);
@@ -1407,9 +1423,8 @@ static GameSurfaceView* pojavWindow;
     
     if (!self.slideableHotbar) {
         CGPoint location = [sender locationInView:self.surfaceView];
-        CGFloat screenScale = self.screenScale;
         currentHotbarSlot = self.enableHotbarGestures ?
-            callback_SurfaceViewController_touchHotbar(location.x * screenScale, location.y * screenScale) : -1;
+            callback_SurfaceViewController_touchHotbar(location.x, location.y) : -1;
     }
     if (sender.state == UIGestureRecognizerStateBegan) {
         self.shouldTriggerClick = NO;
@@ -1673,9 +1688,8 @@ static NSTimer* staleTouchSweepTimer = nil;
             continue; // handle this in a different place
         }
         CGPoint locationInView = [touch locationInView:self.surfaceView];
-        CGFloat screenScale = self.screenScale;
         currentHotbarSlot = self.enableHotbarGestures ?
-            callback_SurfaceViewController_touchHotbar(locationInView.x * screenScale, locationInView.y * screenScale) : -1;
+            callback_SurfaceViewController_touchHotbar(locationInView.x, locationInView.y) : -1;
         if ([self isTouchInactive:self.hotbarTouch] && currentHotbarSlot != -1) {
             self.hotbarTouch = touch;
         }

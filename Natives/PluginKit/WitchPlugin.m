@@ -29,6 +29,16 @@
 @property (nonatomic, readwrite, nullable) NSString *artifactSha256;
 @property (nonatomic, readwrite, nullable) NSString *verifiedAt;
 @property (nonatomic, readwrite) NSInteger crashCount;
+@property (nonatomic, readwrite) WitchPluginRiskLevel riskLevel;
+@property (nonatomic, readwrite) NSArray<NSDictionary *> *riskFindings;
+@property (nonatomic, readwrite) NSArray<NSString *> *riskSummary;
+@property (nonatomic, readwrite) BOOL sandboxRequired;
+@property (nonatomic, readwrite) BOOL sandboxed;
+@property (nonatomic, readwrite) WitchPluginSandboxVerdict sandboxVerdict;
+@property (nonatomic, readwrite) NSArray<NSString *> *sandboxObservations;
+@property (nonatomic, readwrite) NSArray<NSString *> *sandboxBlocked;
+@property (nonatomic, readwrite) NSArray<NSString *> *sandboxErrors;
+@property (nonatomic, readwrite) NSArray<NSString *> *sandboxCapabilities;
 @end
 
 static NSString *WPString(id value) {
@@ -81,6 +91,16 @@ static NSString *WPString(id value) {
     _artifactSha256 = [_state[@"artifactSha256"] isKindOfClass:[NSString class]] ? _state[@"artifactSha256"] : nil;
     _verifiedAt = [_state[@"verifiedAt"] isKindOfClass:[NSString class]] ? _state[@"verifiedAt"] : nil;
     _crashCount = [_state[@"crashCount"] integerValue];
+    _riskLevel = (WitchPluginRiskLevel)[_state[@"riskLevel"] integerValue];
+    _riskFindings = [_state[@"riskFindings"] isKindOfClass:[NSArray class]] ? _state[@"riskFindings"] : @[];
+    _riskSummary = [_state[@"riskSummary"] isKindOfClass:[NSArray class]] ? _state[@"riskSummary"] : @[];
+    _sandboxRequired = [_state[@"sandboxRequired"] boolValue];
+    _sandboxed = [_state[@"sandboxed"] boolValue];
+    _sandboxVerdict = (WitchPluginSandboxVerdict)[_state[@"sandboxVerdict"] integerValue];
+    _sandboxObservations = [_state[@"sandboxObservations"] isKindOfClass:[NSArray class]] ? _state[@"sandboxObservations"] : @[];
+    _sandboxBlocked = [_state[@"sandboxBlocked"] isKindOfClass:[NSArray class]] ? _state[@"sandboxBlocked"] : @[];
+    _sandboxErrors = [_state[@"sandboxErrors"] isKindOfClass:[NSArray class]] ? _state[@"sandboxErrors"] : @[];
+    _sandboxCapabilities = [_state[@"sandboxCapabilities"] isKindOfClass:[NSArray class]] ? _state[@"sandboxCapabilities"] : @[];
 }
 
 - (NSDictionary *)settings {

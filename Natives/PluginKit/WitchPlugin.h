@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import "WitchPluginRisk.h"
+#import "WitchPluginSandbox.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -40,6 +42,19 @@ typedef NS_ENUM(NSInteger, WitchPluginVerificationState) {
 @property (nonatomic, readonly, nullable) NSString *artifactSha256;
 @property (nonatomic, readonly, nullable) NSString *verifiedAt;
 @property (nonatomic, readonly) NSInteger crashCount;
+// Behavioural risk computed from the manifest and the files that run.
+@property (nonatomic, readonly) WitchPluginRiskLevel riskLevel;
+@property (nonatomic, readonly) NSArray<NSDictionary *> *riskFindings;
+@property (nonatomic, readonly) NSArray<NSString *> *riskSummary;
+@property (nonatomic, readonly) BOOL sandboxRequired;
+// YES when the plugin runs inside the launcher sandbox.
+@property (nonatomic, readonly) BOOL sandboxed;
+// What the sandbox rehearsal found while the package was verified.
+@property (nonatomic, readonly) WitchPluginSandboxVerdict sandboxVerdict;
+@property (nonatomic, readonly) NSArray<NSString *> *sandboxObservations;
+@property (nonatomic, readonly) NSArray<NSString *> *sandboxBlocked;
+@property (nonatomic, readonly) NSArray<NSString *> *sandboxErrors;
+@property (nonatomic, readonly) NSArray<NSString *> *sandboxCapabilities;
 
 - (instancetype)initWithInstallPath:(NSString *)installPath
                            manifest:(NSDictionary *)manifest

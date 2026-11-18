@@ -428,6 +428,10 @@
 "preference.title.gesture_hold" = "Tap to place, hold to break blocks";
 "preference.title.doubletap_offhand" = "Double-tap hotbar to swap offhand (F)";
 "preference.title.keyboard_editing_toolbar" = "Apple keyboard editing toolbar";
+"preference.title.keyboard_input_mode" = "Hardware keyboard language";
+"preference.keyboard_input_mode.auto" = "Follow keyboard layout";
+"preference.keyboard_input_mode.vi" = "Vietnamese (Telex)";
+"preference.keyboard_input_mode.en" = "English";
 "preference.detail.gesture_hotbar" = "Enables gestures, such as touch the hotbar slot, swap items between hand, throw items";
 "preference.title.disable_haptics" = "Disable on-screen haptics";
 "preference.title.press_duration" = "Long-press duration (ms)";
@@ -1487,6 +1491,103 @@
 "Registry verification failed." = "Registry verification failed.";
 "Verified by the Witch plugin registry. Signature and checksums are valid." = "Verified by the Witch plugin registry. Signature and checksums are valid.";
 "Advanced: edit %@ in the app folder to disable a plugin manually." = "Advanced: edit %@ in the app folder to disable a plugin manually.";
+
+"Available Plugins" = "Available Plugins";
+
+"Sandbox rehearsal" = "Sandbox rehearsal";
+"Sandbox rehearsal:" = "Sandbox rehearsal:";
+"Blocked: %@" = "Blocked: %@";
+"blocked: %@" = "blocked: %@";
+"Failed while it was verified" = "Failed while it was verified";
+"The sandbox refused this call while the package was verified." = "The sandbox refused this call while the package was verified.";
+"The payload carries this system API." = "The payload carries this system API.";
+"Calls recorded (%lu)" = "Calls recorded (%lu)";
+"and %lu more" = "and %lu more";
+"%lu calls recorded" = "%lu calls recorded";
+"%lu blocked attempts" = "%lu blocked attempts";
+"%lu errors" = "%lu errors";
+"%lu capabilities" = "%lu capabilities";
+"Nothing was executed during the verification." = "Nothing was executed during the verification.";
+
+"preference.title.witch_plugin_repo" = "Plugin catalog repository";
+
+"preference.detail.witch_plugin_repo" = "GitHub repository that publishes the plugin catalog (owner/repo)";
+
+"Loading the plugin catalog..." = "Loading the plugin catalog...";
+
+"No plugin catalog is available." = "No plugin catalog is available.";
+
+"The plugin catalog could not be loaded: %@" = "The plugin catalog could not be loaded: %@";
+
+"Plugins come from %@. Every package is pinned by hash and verified before it is installed." = "Plugins come from %@. Every package is pinned by hash and verified before it is installed.";
+
+"Installed" = "Installed";
+
+"Sandboxed" = "Sandboxed";
+
+"Force Install" = "Force Install";
+
+"Install inside the sandbox" = "Install inside the sandbox";
+
+"Native code stays blocked. The plugin can only use its settings and theme." = "Native code stays blocked. The plugin can only use its settings and theme.";
+
+"Install and allow native code" = "Install and allow native code";
+
+"The plugin runs its binary inside the launcher process." = "The plugin runs its binary inside the launcher process.";
+
+"Update Plugin" = "Update Plugin";
+
+"Plugin Updated" = "Plugin Updated";
+
+"%@ was updated. Restart the launcher to load it." = "%@ was updated. Restart the launcher to load it.";
+
+"This plugin is dangerous. It asks for access the launcher sandbox cannot protect." = "This plugin is dangerous. It asks for access the launcher sandbox cannot protect.";
+
+"This plugin needs attention before you trust it." = "This plugin needs attention before you trust it.";
+
+"What the launcher will run:" = "What the launcher will run:";
+
+"The plugin runs inside the launcher sandbox. Native code stays blocked until you turn the sandbox off on the plugin screen." = "The plugin runs inside the launcher sandbox. Native code stays blocked until you turn the sandbox off on the plugin screen.";
+
+"Analysis" = "Analysis";
+
+"Risk level" = "Risk level";
+
+"What the launcher runs" = "What the launcher runs";
+
+"Nothing" = "Nothing";
+
+"Safe" = "Safe";
+
+"Dangerous" = "Dangerous";
+
+"Sandbox" = "Sandbox";
+
+"Native code is blocked and the script runs isolated." = "Native code is blocked and the script runs isolated.";
+
+"Native code is blocked. Turn the sandbox off to let the plugin run." = "Native code is blocked. Turn the sandbox off to let the plugin run.";
+
+"The plugin runs with the full launcher permissions." = "The plugin runs with the full launcher permissions.";
+
+"Disable Sandbox" = "Disable Sandbox";
+
+"Turning the sandbox off lets the plugin run native code inside the launcher process again." = "Turning the sandbox off lets the plugin run native code inside the launcher process again.";
+
+"This plugin is marked as dangerous. Only continue if you built it yourself or you fully trust its source." = "This plugin is marked as dangerous. Only continue if you built it yourself or you fully trust its source.";
+
+"Version %@ is available" = "Version %@ is available";
+
+"No finding. The plugin only declares settings and theme data." = "No finding. The plugin only declares settings and theme data.";
+
+"The analysis is computed from the manifest and from the files the launcher would execute." = "The analysis is computed from the manifest and from the files the launcher would execute.";
+
+"Enabled" = "Enabled";
+
+"The behaviour of this plugin could not be analysed" = "The behaviour of this plugin could not be analysed";
+
+"Review the package before you install it." = "Review the package before you install it.";
+
+"Manage" = "Manage";
 
 "modpack.export_title" = "Export Modpack";
 "modpack.export_message" = "Choose the pack format to export.";
