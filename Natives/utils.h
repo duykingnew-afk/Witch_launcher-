@@ -36,6 +36,10 @@
 #define GLFW_VISIBLE 0x00020004
 
 #define RENDERER_NAME_GL4ES "libgl4es_114.dylib"
+// Krypton Wrapper (NG-GL4ES), built from Natives/external/NG-GL4ES by
+// Natives/cmake/ng_gl4es. Shares the Metal ANGLE pair with GL4ES; see
+// krypton_prepare() in ctxbridges/gl_bridge.m.
+#define RENDERER_NAME_KRYPTON "libng_gl4es.dylib"
 #define RENDERER_NAME_MTL_ANGLE "libtinygl4angle.dylib"
 #define RENDERER_NAME_MOBILEGLUES "libmobileglues.dylib"
 #define RENDERER_NAME_MOBILEGLUES_OLD "libmobileglues_old.dylib"

@@ -338,7 +338,8 @@ void dlsym_EGL() {
             NSLog(@"[EGLBridge] FATAL: LTW host EGL could not be loaded");
             return;
         }
-    } else if ([@ RENDERER_NAME_GL4ES isEqualToString:renderer]) {
+    } else if ([@ RENDERER_NAME_GL4ES isEqualToString:renderer] ||
+               [@ RENDERER_NAME_KRYPTON isEqualToString:renderer]) {
         // GL4ES renders through the private Metal ANGLE build. That libEGL was
         // linked with ANGLE_CUSTOM_DISPATCH_LIBRARY=libGLESv2_angle_metal.dylib
         // and loads the companion directly from Frameworks/, so do NOT route it
@@ -544,6 +545,59 @@ static void log_egl_implementation(const char* tag) {
         }
         NSLog(@"[EGLBridge] %s impl %s -> %s", tag, probes[i].name, img);
     }
+}
+
+// ── Krypton Wrapper (libng_gl4es, NG-GL4ES) ─────────────────────────────────
+// The renderer is built with NO_LOADER and NO_INIT_CONSTRUCTOR on Apple. It
+// never dlopens GLES or EGL, and its own dlsym(RTLD_NEXT) lookup cannot see the
+// Metal ANGLE pair, because pojavInitOpenGL loads that pair before the renderer.
+// So the launcher installs GetProcAddress through set_getprocaddress, then runs
+// initialize_gl4es() once a context is current, so NG's hardware probe makes
+// real GL calls.
+typedef void *(*krypton_getproc_fn)(const char *name);
+static void *krypton_gles_handle;
+static void *krypton_egl_handle;
+static void (*krypton_init_fn)(void);
+static BOOL krypton_init_pending;
+
+static void *krypton_get_proc(const char *name) {
+    void *p = krypton_gles_handle ? dlsym(krypton_gles_handle, name) : NULL;
+    if (!p && krypton_egl_handle) {
+        p = dlsym(krypton_egl_handle, name);
+        if (!p) {
+            krypton_getproc_fn egl_get_proc = (krypton_getproc_fn)dlsym(krypton_egl_handle, "eglGetProcAddress");
+            if (egl_get_proc) p = egl_get_proc(name);
+        }
+    }
+    return p;
+}
+
+void krypton_prepare(void *ngLib, void *glesHandle, void *eglHandle) {
+    if (!ngLib) {
+        const char *err = dlerror();
+        NSLog(@"[EGLBridge] Krypton: libng_gl4es not loaded (%s)", err ? err : "unknown error");
+        return;
+    }
+    void (*setProcAddress)(krypton_getproc_fn) = (void (*)(krypton_getproc_fn))dlsym(ngLib, "set_getprocaddress");
+    void (*initGL4ES)(void) = (void (*)(void))dlsym(ngLib, "initialize_gl4es");
+    if (!setProcAddress || !initGL4ES) {
+        NSLog(@"[EGLBridge] Krypton: libng_gl4es has no set_getprocaddress/initialize_gl4es");
+        return;
+    }
+    // NG-GL4ES reads its config and writes its log under NGG_DIR_PATH. Its
+    // default (/sdcard/NGG) is an Android path, so point it into Documents.
+    NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    NSString *nggDir = [docs stringByAppendingPathComponent:@"NGG"];
+    [NSFileManager.defaultManager createDirectoryAtPath:nggDir withIntermediateDirectories:YES attributes:nil error:nil];
+    setenv("NGG_DIR_PATH", nggDir.fileSystemRepresentation, 1);
+
+    krypton_gles_handle = glesHandle;
+    krypton_egl_handle = eglHandle;
+    krypton_init_fn = initGL4ES;
+    setProcAddress(krypton_get_proc);
+    krypton_init_pending = YES;
+    NSLog(@"[EGLBridge] Krypton: GetProcAddress installed (gles=%p egl=%p); init waits for a current context",
+          glesHandle, eglHandle);
 }
 
 static bool gl_init() {
@@ -1182,6 +1236,12 @@ void gl_make_current(gl_render_window_t* bundle) {
     if(handle.eglMakeCurrent(g_EglDisplay, bundle->surface, bundle->surface, bundle->context)) {
         currentBundle = (basic_render_window_t *)bundle;
         NSLog(@"[EGLBridge] gl_make_current: OK, currentBundle=%p", currentBundle);
+        if (krypton_init_pending) {
+            // First current context for Krypton: its hardware probe needs one.
+            krypton_init_pending = NO;
+            NSLog(@"[EGLBridge] Krypton: initialize_gl4es with a current context");
+            krypton_init_fn();
+        }
 
         // --- Deep diagnostic: verify MobileGL EGL state ---
         typedef void* (*eglGetCurrentContextFn)(void);

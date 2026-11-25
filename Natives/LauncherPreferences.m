@@ -192,6 +192,7 @@ NSArray* getRendererKeys(BOOL containsDefault) {
     NSMutableArray *array = @[
         @"auto",
         @ RENDERER_NAME_GL4ES,
+        @ RENDERER_NAME_KRYPTON,
         @ RENDERER_NAME_MTL_ANGLE,
         @ RENDERER_NAME_MOBILEGLUES,
         @ RENDERER_NAME_LTW,
@@ -226,9 +227,14 @@ NSArray* getRendererNames(BOOL containsDefault) {
     if ([tglmtName hasPrefix:@"preference.title"]) {
         tglmtName = @"TGLMT (Metal) - exports OpenGL 4.6 Core via Metal, A11+";
     }
+    NSString *kryptonName = localize(@"preference.title.renderer.debug.krypton", nil);
+    if ([kryptonName hasPrefix:@"preference.title"]) {
+        kryptonName = @"Krypton Wrapper (NG-GL4ES) - advanced shaders, more OpenGL features";
+    }
     [array addObjectsFromArray:@[
         localize(@"preference.title.renderer.debug.auto", nil),
         localize(@"preference.title.renderer.debug.gl4es", nil),
+        kryptonName,
         localize(@"preference.title.renderer.debug.angle", nil),
         localize(@"preference.title.renderer.debug.mg", nil),
         localize(@"preference.title.renderer.debug.ltw", nil),

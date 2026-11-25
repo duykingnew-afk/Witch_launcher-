@@ -330,6 +330,9 @@ int pojavInit(BOOL useStackQueue) {
     return JNI_TRUE;
 }
 
+// Krypton hand-off to libng_gl4es, defined in ctxbridges/gl_bridge.m.
+void krypton_prepare(void *ngLib, void *glesHandle, void *eglHandle);
+
 int pojavInitOpenGL() {
     NSString *renderer = NSProcessInfo.processInfo.environment[@"AMETHYST_RENDERER"];
     // The Metal path exposes the host CAMetalLayer through SDL; a
@@ -343,9 +346,13 @@ int pojavInitOpenGL() {
         return JNI_TRUE;
     }
     BOOL isAuto = [renderer isEqualToString:@"auto"];
-    if (isAuto || [renderer isEqualToString:@ RENDERER_NAME_GL4ES]) {
-        // At this point, if renderer is still auto (unspecified major version), pick gl4es
-        renderer = @ RENDERER_NAME_GL4ES;
+    BOOL isKrypton = [renderer isEqualToString:@ RENDERER_NAME_KRYPTON];
+    void *ngGlesHandle = NULL, *ngEglHandle = NULL;
+    if (isAuto || isKrypton || [renderer isEqualToString:@ RENDERER_NAME_GL4ES]) {
+        // At this point, if renderer is still auto (unspecified major version), pick gl4es.
+        // Krypton keeps its own name: it takes this same Metal ANGLE path, and its
+        // GLES/EGL handles go to libng_gl4es after the preload (krypton_prepare).
+        if (!isKrypton) renderer = @ RENDERER_NAME_GL4ES;
         setenv("AMETHYST_RENDERER", renderer.UTF8String, 1);
         // GL4ES uses the private Metal ANGLE pair. libEGL_angle_metal is built
         // with ANGLE_CUSTOM_DISPATCH_LIBRARY=libGLESv2_angle_metal.dylib, so it
@@ -358,9 +365,9 @@ int pojavInitOpenGL() {
         if (![NSFileManager.defaultManager fileExistsAtPath:metalGles]) {
             metalGles = [frameworks stringByAppendingPathComponent:@"libGLESv2_angle_metal"];
         }
-        egl_checked_dlopen(metalGles, "GL4ES ANGLE GLES (metal)");
-        egl_checked_dlopen([frameworks stringByAppendingPathComponent:@"libEGL_angle_metal"],
-                           "GL4ES ANGLE EGL (metal)");
+        ngGlesHandle = egl_checked_dlopen(metalGles, "GL4ES ANGLE GLES (metal)");
+        ngEglHandle = egl_checked_dlopen([frameworks stringByAppendingPathComponent:@"libEGL_angle_metal"],
+                                         "GL4ES ANGLE EGL (metal)");
         // Keep the ICD manifest as a fallback for the tinygl4angle/Vulkan path
         // in case the custom Metal EGL is missing.
         ensureMoltenVKICD();
@@ -548,7 +555,8 @@ int pojavInitOpenGL() {
         [renderer isEqualToString:@ RENDERER_NAME_TGLMT] ||
         !mesaEGLSelected) {
         NSLog(@"[EGLBridge] Preloading renderer library: @rpath/%@", renderer);
-        dlopen([NSString stringWithFormat:@"@rpath/%@", renderer].UTF8String, RTLD_GLOBAL);
+        void *preloaded = dlopen([NSString stringWithFormat:@"@rpath/%@", renderer].UTF8String, RTLD_GLOBAL);
+        if (isKrypton) krypton_prepare(preloaded, ngGlesHandle, ngEglHandle);
     } else {
         NSLog(@"[EGLBridge] Skipping renderer preload (Mesa EGL mode)");
     }

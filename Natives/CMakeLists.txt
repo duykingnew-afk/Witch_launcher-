@@ -12,6 +12,10 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${GLOBAL_LDFLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${GLOBAL_LDFLAGS}")
 endif()
 
+# Krypton Wrapper (NG-GL4ES) -> libng_gl4es.dylib. Added before the global
+# include_directories() below so Witch's include paths stay out of it.
+add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/cmake/ng_gl4es ${CMAKE_CURRENT_BINARY_DIR}/ng_gl4es)
+
 include_directories(
   "."
   "LogEngine"
