@@ -36,6 +36,40 @@ NSString *const MobileGLPrefSection = @"mobilegl";
     return MobileGLAngleBackendTGLES;
 }
 
+// Devices with 3 GB of RAM or less (iPhone 7 Plus, 8 Plus, X) reach the
+// per-process Jetsam ceiling (about 2 GB) with a modded game loaded, and one
+// MobileGL allocation spike is enough to close the app. On those devices the
+// knobs that multiply memory are clamped whatever the saved preference says.
+static const unsigned long long kLowMemoryDeviceBytes = 4ULL * 1024 * 1024 * 1024;
+
++ (BOOL)isLowMemoryDevice {
+    return NSProcessInfo.processInfo.physicalMemory < kLowMemoryDeviceBytes;
+}
+
++ (int)effectiveFramesInFlight {
+    id framesInFlight = getPrefObject(@"mobilegl.frames_in_flight");
+    int value = framesInFlight ? (int)[framesInFlight integerValue]
+        : (NSProcessInfo.processInfo.physicalMemory >= (6ULL * 1024 * 1024 * 1024) ? 3 : 2);
+    // Every frame-in-flight keeps its own arena slot/high-water mark. An
+    // unclamped value from an old config could multiply the MobileGL arena
+    // and push a 4 GB device straight into Jetsam.
+    if (value < 1) value = 1;
+    if (value > 4) value = 4;
+    if ([self isLowMemoryDevice] && value > 2) value = 2;
+    return value;
+}
+
++ (int)effectiveVmaBlockSizeMB {
+    id vmaBlockSize = getPrefObject(@"mobilegl.vma_block_size");
+    int value = vmaBlockSize ? (int)[vmaBlockSize integerValue] : 32;
+    if (value < 8) value = 8;
+    if (value > 64) value = 64;
+    // VMA blocks are allocated whole, so on a small device a 32 MB block with
+    // only a few MB in use is mostly wasted memory.
+    if ([self isLowMemoryDevice] && value > 16) value = 16;
+    return value;
+}
+
 + (void)applyEnvironmentFromPreferences {
     // Backend type (DirectVulkan or DirectGLES)
     MobileGLBackendType backendType = [self selectedBackendType];
@@ -68,22 +102,12 @@ NSString *const MobileGLPrefSection = @"mobilegl";
     id advertiseFP64 = getPrefObject(@"mobilegl.advertise_fp64");
     setenv("MOBILEGL_ADVERTISE_FP64", [advertiseFP64 boolValue] ? "1" : "0", 1);
 
-    id framesInFlight = getPrefObject(@"mobilegl.frames_in_flight");
-    int framesValue = framesInFlight ? (int)[framesInFlight integerValue]
-        : (NSProcessInfo.processInfo.physicalMemory >= (6ULL * 1024 * 1024 * 1024) ? 3 : 2);
-    // Every frame-in-flight keeps its own arena slot/high-water mark. An
-    // unclamped value from an old config could multiply the MobileGL arena
-    // and push a 4 GB device straight into Jetsam.
-    if (framesValue < 1) framesValue = 1;
-    if (framesValue > 4) framesValue = 4;
+    int framesValue = [self effectiveFramesInFlight];
     char framesStr[16];
     snprintf(framesStr, sizeof(framesStr), "%d", framesValue);
     setenv("MOBILEGL_MAGMA_FRAMESINFLIGHT", framesStr, 1);
 
-    id vmaBlockSize = getPrefObject(@"mobilegl.vma_block_size");
-    int vmaValue = vmaBlockSize ? (int)[vmaBlockSize integerValue] : 32;
-    if (vmaValue < 8) vmaValue = 8;
-    if (vmaValue > 64) vmaValue = 64;
+    int vmaValue = [self effectiveVmaBlockSizeMB];
     char vmaStr[16];
     snprintf(vmaStr, sizeof(vmaStr), "%d", vmaValue);
     setenv("MOBILEGL_MAGMA_VMA_BLOCK_SIZE_MB", vmaStr, 1);
@@ -95,6 +119,12 @@ NSString *const MobileGLPrefSection = @"mobilegl";
     char adoptStr[16];
     snprintf(adoptStr, sizeof(adoptStr), "%d", adoptValue);
     setenv("MOBILEGL_LARGE_BUFFER_ADOPT_MB", adoptStr, 1);
+    if ([self isLowMemoryDevice]) {
+        // Automatic adoption moves large buffers into an arena that grows in
+        // steps. In both Jetsam logs it went 8 -> 256 MB just before the kill,
+        // so on these devices large buffers stay ordinary allocations.
+        setenv("MOBILEGL_DISABLE_LARGE_BUFFER_ADOPTION", "1", 1);
+    }
 
     id coherentAsFlush = getPrefObject(@"mobilegl.coherent_as_flush");
     setenv("MOBILEGL_COHERENT_AS_FLUSH", [coherentAsFlush boolValue] ? "1" : "0", 1);
@@ -128,7 +158,7 @@ NSString *const MobileGLPrefSection = @"mobilegl";
     id r11g11b10f = getPrefObject(@"mobilegl.r11g11b10f_fallback");
     setenv("MOBILEGL_MAGMA_R11G11B10F_FALLBACK", [r11g11b10f boolValue] ? "1" : "0", 1);
 
-    NSLog(@"[MobileGLConfig] Applied config: backend=%s angle=%s timerQ=%s subgroup=%s fp64=%s frames=%s vmaBlock=%sMB adoptThreshold=%sMB coherent=%s async=%s cache=%s r11g11b10f=%s",
+    NSLog(@"[MobileGLConfig] Applied config: backend=%s angle=%s timerQ=%s subgroup=%s fp64=%s frames=%s vmaBlock=%sMB adoptThreshold=%sMB coherent=%s async=%s cache=%s r11g11b10f=%s device=%s adoption=%s",
         getenv("MOBILEGL_BACKEND_TYPE"),
         getenv("MOBILEGL_ANGLE_BACKEND"),
         getenv("MOBILEGL_DISABLE_TIMERQUERY"),
@@ -140,7 +170,9 @@ NSString *const MobileGLPrefSection = @"mobilegl";
         getenv("MOBILEGL_COHERENT_AS_FLUSH"),
         getenv("MOBILEGL_ASYNC_SHADER_COMPILE"),
         getenv("MOBILEGL_SHADER_CACHE"),
-        getenv("MOBILEGL_MAGMA_R11G11B10F_FALLBACK"));
+        getenv("MOBILEGL_MAGMA_R11G11B10F_FALLBACK"),
+        [self isLowMemoryDevice] ? "low-RAM" : "normal",
+        getenv("MOBILEGL_DISABLE_LARGE_BUFFER_ADOPTION") ? "off" : "auto");
 }
 
 + (NSString *)activeConfigSummary {
@@ -161,14 +193,23 @@ NSString *const MobileGLPrefSection = @"mobilegl";
     id advertiseFP64 = getPrefObject(@"mobilegl.advertise_fp64");
     NSString *fp64 = advertiseFP64 ? ([advertiseFP64 boolValue] ? @"YES" : @"NO") : @"NO";
 
+    // Effective values after the clamps; the saved value is shown when they differ.
     id framesInFlight = getPrefObject(@"mobilegl.frames_in_flight");
-    NSString *frames = framesInFlight ? [NSString stringWithFormat:@"%ld", (long)[framesInFlight integerValue]] : @"3";
+    int framesEffective = [self effectiveFramesInFlight];
+    NSString *frames = (framesInFlight && [framesInFlight integerValue] != framesEffective)
+        ? [NSString stringWithFormat:@"%d (saved %ld)", framesEffective, (long)[framesInFlight integerValue]]
+        : [NSString stringWithFormat:@"%d", framesEffective];
 
     id vmaBlockSize = getPrefObject(@"mobilegl.vma_block_size");
-    NSString *vmaBlock = vmaBlockSize ? [NSString stringWithFormat:@"%ldMB", (long)[vmaBlockSize integerValue]] : @"32MB";
+    int vmaEffective = [self effectiveVmaBlockSizeMB];
+    NSString *vmaBlock = (vmaBlockSize && [vmaBlockSize integerValue] != vmaEffective)
+        ? [NSString stringWithFormat:@"%dMB (saved %ldMB)", vmaEffective, (long)[vmaBlockSize integerValue]]
+        : [NSString stringWithFormat:@"%dMB", vmaEffective];
 
     id largeBufferAdopt = getPrefObject(@"mobilegl.large_buffer_adopt_size");
-    NSString *adoptThreshold = largeBufferAdopt ? [NSString stringWithFormat:@"%ldMB", (long)[largeBufferAdopt integerValue]] : @"4MB";
+    NSString *adoptThreshold = [self isLowMemoryDevice]
+        ? @"off (low-RAM device)"
+        : (largeBufferAdopt ? [NSString stringWithFormat:@"%ldMB", (long)[largeBufferAdopt integerValue]] : @"4MB");
 
     id coherentAsFlush = getPrefObject(@"mobilegl.coherent_as_flush");
     NSString *coherent = coherentAsFlush ? ([coherentAsFlush boolValue] ? @"YES" : @"NO") : @"NO";
