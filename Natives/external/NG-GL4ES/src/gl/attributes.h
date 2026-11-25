@@ -67,8 +67,22 @@
 #endif // AliasDecl
 
 #ifndef AliasExport
- #if !defined(__EMSCRIPTEN__) && !defined(__APPLE__)
-  #ifdef __GNUC__
+ #if !defined(__EMSCRIPTEN__)
+  #if defined(__APPLE__)
+   // Mach-O has no alias attribute ("aliases are not supported on darwin"), so
+   // each exported name is an assembler alias of its gl4es_ body. Mach-O C
+   // symbols carry a leading underscore in assembly, hence NG_ASM_PREFIX. The
+   // Linux test build of this branch defines NG_ASM_PREFIX empty, because ELF
+   // symbols have no underscore.
+   #ifndef NG_ASM_PREFIX
+    #define NG_ASM_PREFIX "_"
+   #endif
+   #define _AliasExport_(RET,ENM,DEF,INM,SUF) EXPORT \
+      RET APIENTRY_GL4ES ENM DEF; \
+      __asm__(".globl " NG_ASM_PREFIX #ENM "\n\t.set " NG_ASM_PREFIX #ENM ", " NG_ASM_PREFIX "gl4es_" #INM)
+   #define NonAliasExportDecl(RET,NAME,DEF) EXPORT \
+      RET APIENTRY_GL4ES NAME DEF
+  #elif defined(__GNUC__)
    #define _AliasExport_(RET,ENM,DEF,INM,SUF) EXPORT \
       RET APIENTRY_GL4ES ENM DEF __attribute__((alias(_MNG(gl4es_##INM,SUF))))
    #define NonAliasExportDecl(RET,NAME,DEF) EXPORT \

@@ -4052,11 +4052,9 @@ GLAPI void APIENTRY glMinSampleShadingARB (GLfloat value);
 
 #ifndef GL_ARB_shader_objects
 #define GL_ARB_shader_objects 1
-#ifdef __APPLE__
-typedef void *GLhandleARB;
-#else
+/* NG-GL4ES handles are unsigned int on every platform (see src/gl/gles.h).
+ * Apple's void* variant conflicts with that typedef under __APPLE__. */
 typedef unsigned int GLhandleARB;
-#endif
 typedef char GLcharARB;
 #define GL_PROGRAM_OBJECT_ARB             0x8B40
 #define GL_SHADER_OBJECT_ARB              0x8B48

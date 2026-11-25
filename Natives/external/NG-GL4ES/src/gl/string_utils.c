@@ -318,6 +318,28 @@ char* gl4es_inplace_replace_simple(char* pBuffer, int* size, const char* S, cons
 
 
 // for vgpu/shaderconv.c
+#if defined(__APPLE__)
+// Mach-O has no alias attribute ("aliases are not supported on darwin"), so
+// each short name forwards to its gl4es_* body.
+const char* FindString(const char* pBuffer, const char* S) { return gl4es_find_string(pBuffer, S); }
+char* FindStringNC(char* pBuffer, const char* S) { return gl4es_find_string_nc(pBuffer, S); }
+int CountString(const char* pBuffer, const char* S) { return gl4es_count_string(pBuffer, S); }
+char* ResizeIfNeeded(char* pBuffer, int *size, int addsize) { return gl4es_resize_if_needed(pBuffer, size, addsize); }
+char* InplaceReplace(char* pBuffer, int* size, const char* S, const char* D) { return gl4es_inplace_replace(pBuffer, size, S, D); }
+char* Append(char* pBuffer, int* size, const char* S) { return gl4es_append(pBuffer, size, S); }
+char* InplaceInsert(char* pBuffer, const char* S, char* master, int* size) { return gl4es_inplace_insert(pBuffer, S, master, size); }
+char* GetLine(char* pBuffer, int num) { return gl4es_getline(pBuffer, num); }
+int CountLine(const char* pBuffer) { return gl4es_countline(pBuffer); }
+int GetLineFor(const char* pBuffer, const char* S) { return gl4es_getline_for(pBuffer, S); }
+char* StrNext(char *pBuffer, const char* S) { return gl4es_str_next(pBuffer, S); }
+char* NextStr(char* pBuffer) { return gl4es_next_str(pBuffer); }
+char* PrevStr(char* Str, char* pBuffer) { return gl4es_prev_str(Str, pBuffer); }
+char* NextBlank(char* pBuffer) { return gl4es_next_blank(pBuffer); }
+char* NextLine(char* pBuffer) { return gl4es_next_line(pBuffer); }
+const char* GetNextStr(char* pBuffer) { return gl4es_get_next_str(pBuffer); }
+int CountStringSimple(char* pBuffer, const char* S) { return gl4es_countstring_simple(pBuffer, S); }
+char* InplaceReplaceSimple(char* pBuffer, int* size, const char* S, const char* D) { return gl4es_inplace_replace_simple(pBuffer, size, S, D); }
+#else
 const char* FindString(const char* pBuffer, const char* S) __attribute__((alias("gl4es_find_string")));
 char* FindStringNC(char* pBuffer, const char* S) __attribute__((alias("gl4es_find_string_nc")));
 int CountString(const char* pBuffer, const char* S) __attribute__((alias("gl4es_count_string")));
@@ -336,3 +358,4 @@ char* NextLine(char* pBuffer) __attribute__((alias("gl4es_next_line")));
 const char* GetNextStr(char* pBuffer) __attribute__((alias("gl4es_get_next_str")));
 int CountStringSimple(char* pBuffer, const char* S) __attribute__((alias("gl4es_countstring_simple")));
 char* InplaceReplaceSimple(char* pBuffer, int* size, const char* S, const char* D) __attribute__((alias("gl4es_inplace_replace_simple")));
+#endif

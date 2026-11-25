@@ -5,11 +5,19 @@
 
 // #define DEBUG
 
+#ifndef NG_ASM_PREFIX
+ #define NG_ASM_PREFIX "_"
+#endif
+
 #ifndef __APPLE__
+#define NATIVE_ARB_ALIAS(name)
 #define NATIVE_FUNCTION_HEAD(type, name, ...)                                                                          \
     extern "C" GLAPI GLAPIENTRY type name##ARB(__VA_ARGS__) __attribute__((alias(#name)));                             \
     extern "C" GLAPI GLAPIENTRY type name(__VA_ARGS__) {
 #else
+// Mach-O has no alias attribute. Export the ARB name as an assembler alias of the
+// core symbol defined in this file, so both names are definitions in this object.
+#define NATIVE_ARB_ALIAS(name) __asm__(".globl " NG_ASM_PREFIX #name "ARB\n\t.set " NG_ASM_PREFIX #name "ARB, " NG_ASM_PREFIX #name);
 #define NATIVE_FUNCTION_HEAD(type, name, ...) extern "C" GLAPI GLAPIENTRY type name(__VA_ARGS__) {
 #endif
 
@@ -18,13 +26,15 @@
     LOAD_GLES3(name);                                                                                                  \
     type ret = gles_##name(__VA_ARGS__);                                                                               \
     return ret;                                                                                                        \
-    }
+    } \
+    NATIVE_ARB_ALIAS(name)
 
 #define NATIVE_FUNCTION_END_NO_RETURN(type, name, ...)                                                                 \
     DBG(SHUT_LOGD("Native function: %s(...)", __FUNCTION__);)                                                          \
     LOAD_GLES3(name);                                                                                                  \
     gles_##name(__VA_ARGS__);                                                                                          \
-    }
+    } \
+    NATIVE_ARB_ALIAS(name)
 
 NATIVE_FUNCTION_HEAD(GLsync, glFenceSync, GLenum condition, GLbitfield flags)
 NATIVE_FUNCTION_END(GLsync, glFenceSync, condition, flags)
