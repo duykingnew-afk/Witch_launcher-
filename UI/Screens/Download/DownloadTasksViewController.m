@@ -333,7 +333,7 @@ static NSString * const kTaskCellId = @"DownloadTaskCell";
 
 - (NSArray<DownloadTaskRow *> *)launchRows {
     NSMutableArray *rows = [NSMutableArray array];
-    for (NSProgress *p in [_launchTask.progressList copy]) {
+    for (NSProgress *p in [_launchTask progressSnapshot]) {
         if (![p isKindOfClass:[NSProgress class]]) continue;
         DownloadTaskRow *row = [[DownloadTaskRow alloc] init];
         NSString *name = p.localizedDescription;

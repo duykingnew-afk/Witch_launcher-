@@ -214,7 +214,9 @@ static BOOL isRetryableDownloadError(NSError *error) {
     NSUInteger fileSize = size > 0 ? (NSUInteger)size : 1;
     progress.kind = NSProgressKindFile;
     progress.totalUnitCount = fileSize;
-    [self.progressList addObject:progress];
+    @synchronized (self.progressList) {
+        [self.progressList addObject:progress];
+    }
     [self.progress addChild:progress withPendingUnitCount:(countInTotal ? fileSize : 0)];
     if (countInTotal) {
         self.progress.totalUnitCount += fileSize;
@@ -495,7 +497,15 @@ static BOOL isRetryableDownloadError(NSError *error) {
     self.progress.totalUnitCount = 1;
     self.progress.completedUnitCount = 0;
     [self.fileList removeAllObjects];
-    [self.progressList removeAllObjects];
+    @synchronized (self.progressList) {
+        [self.progressList removeAllObjects];
+    }
+}
+
+- (NSArray<NSProgress *> *)progressSnapshot {
+    @synchronized (self.progressList) {
+        return [self.progressList copy];
+    }
 }
 
 - (void)finishDownloadWithErrorString:(NSString *)error {

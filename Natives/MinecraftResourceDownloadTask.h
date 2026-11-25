@@ -12,6 +12,9 @@
 - (NSURLSessionDownloadTask *)createDownloadTask:(NSString *)url size:(NSUInteger)size sha:(NSString *)sha altName:(NSString *)altName toPath:(NSString *)path;
 - (void)finishDownloadWithErrorString:(NSString *)error;
 
+/// A copy of progressList taken under its lock, safe to enumerate from any thread.
+- (NSArray<NSProgress *> *)progressSnapshot;
+
 - (void)downloadVersion:(NSDictionary *)version;
 - (void)downloadModpackFromAPI:(ModpackAPI *)api detail:(NSDictionary *)modDetail atIndex:(NSUInteger)selectedVersion;
 

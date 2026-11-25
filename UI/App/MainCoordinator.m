@@ -583,7 +583,7 @@ static const NSTimeInterval kLaunchAutoHideDelay = 3.0;
         NSString *description = self.downloadTask.textProgress.localizedDescription;
         if (!description || [description isEqualToString:@"launcher.download"]) {
             NSProgress *fileProgress = nil;
-            for (NSProgress *p in self.downloadTask.progressList) {
+            for (NSProgress *p in [self.downloadTask progressSnapshot]) {
                 if (p.completedUnitCount > 0 && p.completedUnitCount < p.totalUnitCount) {
                     fileProgress = p;
                     break;
@@ -593,7 +593,7 @@ static const NSTimeInterval kLaunchAutoHideDelay = 3.0;
         }
 
         NSProgress *fileProgress = nil;
-        for (NSProgress *p in self.downloadTask.progressList) {
+        for (NSProgress *p in [self.downloadTask progressSnapshot]) {
             if (p.completedUnitCount > 0 && p.completedUnitCount < p.totalUnitCount) {
                 fileProgress = p;
                 break;
