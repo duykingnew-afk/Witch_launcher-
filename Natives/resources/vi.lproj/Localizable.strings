@@ -1007,6 +1007,10 @@
 "preference.title.debug_server_enabled" = "Máy chủ HTTP gỡ lỗi";
 "preference.title.debug_server_localhost_only" = "Chỉ bind localhost";
 "preference.title.disable_haptics" = "Tắt rung màn hình";
+"preference.title.pe_buttons" = "Nút điều khiển kiểu PE (khởi động lại để áp dụng)";
+"preference.title.pe_buttons_style" = "Texture nút kiểu PE";
+"pe_buttons.style.classic" = "Classic (PE cũ, đá xám)";
+"pe_buttons.style.new" = "New (Bedrock hiện tại)";
 "preference.title.enable_angle" = "Driver ANGLE ES";
 "preference.title.enable_ext_compute_shader" = "Mở rộng Compute Shader";
 "preference.title.enable_ext_direct_state_access" = "Direct State Access";

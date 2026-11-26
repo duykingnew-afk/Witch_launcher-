@@ -438,6 +438,10 @@
 "preference.keyboard_input_mode.en" = "English";
 "preference.detail.gesture_hotbar" = "Enables gestures, such as touch the hotbar slot, swap items between hand, throw items";
 "preference.title.disable_haptics" = "Disable on-screen haptics";
+"preference.title.pe_buttons" = "PE-style on-screen buttons (restart to apply)";
+"preference.title.pe_buttons_style" = "PE button textures";
+"pe_buttons.style.classic" = "Classic (old PE, stone)";
+"pe_buttons.style.new" = "New (current Bedrock)";
 "preference.title.press_duration" = "Long-press duration (ms)";
 "preference.detail.press_duration" = "Trigger press duration for destroying blocks and dropping items.";
 "preference.title.button_scale" = "On-screen button scale (%)";

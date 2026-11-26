@@ -279,6 +279,7 @@ add_executable(Witch
   customcontrols/ControlJoystick.m
   customcontrols/ControlLayout.m
   customcontrols/ControlSubButton.m
+  PEButtons/PEButtons.m
   customcontrols/CustomControlsUtils.m
   customcontrols/ControlLayoutConverter.m
   customcontrols/NSPredicateUtilitiesExternal.m

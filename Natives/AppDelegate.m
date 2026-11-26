@@ -10,6 +10,7 @@
 #import "WitchMemoryPressure.h"
 #import "WitchJITCoordinator.h"
 #import "BackupScheduler.h"
+#import "PEButtons/PEButtons.h"
 
 // SurfaceViewController
 extern dispatch_group_t fatalExitGroup;
@@ -26,6 +27,9 @@ extern dispatch_group_t fatalExitGroup;
     [BackupScheduler registerTasks];
     [WitchPluginManager.shared reload];
     [WitchPluginRuntime.shared loadEnabledPlugins];
+    // Built-in PE Buttons skin, on by default. It runs after the plugins load, so it can
+    // tell whether another plugin has already skinned the controls.
+    PEButtonsInstallIfEnabled();
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [WitchPluginManager.shared verifyInstalledPlugins];
     });

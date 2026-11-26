@@ -213,6 +213,11 @@ static BOOL isPercentPrefKey(NSString *key) {
             @{@"type": @"slider", @"label": localize(@"preference.title.press_duration", nil), @"key": @"control.press_duration", @"min": @100, @"max": @1000, @"suffix": @"ms"},
             @{@"type": @"switch", @"label": localize(@"preference.title.recording_hide", nil), @"key": @"control.recording_hide"},
             @{@"type": @"switch", @"label": localize(@"preference.title.disable_haptics", nil), @"key": @"control.disable_haptics"},
+            @{@"type": @"switch", @"label": localize(@"preference.title.pe_buttons", nil), @"key": @"control.pe_buttons"},
+            @{@"type": @"picker", @"label": localize(@"preference.title.pe_buttons_style", nil), @"key": @"control.pe_buttons_style", @"options": @[
+                @{@"key": @"classic", @"name": localize(@"pe_buttons.style.classic", nil)},
+                @{@"key": @"new", @"name": localize(@"pe_buttons.style.new", nil)}
+            ], @"default": @"classic"},
             header(@"settings.group.keyboard"),
             @{@"type": @"switch", @"label": localize(@"preference.title.keyboard_editing_toolbar", nil), @"key": @"control.keyboard_editing_toolbar"},
             @{@"type": @"picker", @"label": localize(@"preference.title.keyboard_input_mode", nil), @"key": @"control.keyboard_input_mode", @"options": @[
