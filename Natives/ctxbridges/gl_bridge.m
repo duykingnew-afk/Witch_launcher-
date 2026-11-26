@@ -560,7 +560,19 @@ static void *krypton_egl_handle;
 static void (*krypton_init_fn)(void);
 static BOOL krypton_init_pending;
 
+// NG-GL4ES's hardware probe (src/glx/hardext.c, run from initialize_gl4es) ends
+// with eglTerminate() on the EGL display it shares with the host. Witch renders
+// on that display, so the terminate kills the host's context: eglGetCurrentContext
+// returns 0, GLES queries return NULL, and NG's glGetString path then dereferences
+// NULL (SIGSEGV at address 0 inside libng_gl4es.dylib). The display belongs to the
+// host, so Krypton's terminate is a no-op here.
+static EGLBoolean krypton_egl_terminate_noop(EGLDisplay display) {
+    (void)display;
+    return EGL_TRUE;
+}
+
 static void *krypton_get_proc(const char *name) {
+    if (name && strcmp(name, "eglTerminate") == 0) return (void *)krypton_egl_terminate_noop;
     void *p = krypton_gles_handle ? dlsym(krypton_gles_handle, name) : NULL;
     if (!p && krypton_egl_handle) {
         p = dlsym(krypton_egl_handle, name);
@@ -1241,6 +1253,14 @@ void gl_make_current(gl_render_window_t* bundle) {
             krypton_init_pending = NO;
             NSLog(@"[EGLBridge] Krypton: initialize_gl4es with a current context");
             krypton_init_fn();
+            // The hardware probe unbinds its own probe context before it returns.
+            // Put the host's context back on this thread, or every GL query that
+            // follows runs with no current context.
+            if (handle.eglMakeCurrent(g_EglDisplay, bundle->surface, bundle->surface, bundle->context)) {
+                NSLog(@"[EGLBridge] Krypton: host context re-bound after initialize_gl4es");
+            } else {
+                NSLog(@"[EGLBridge] Krypton: re-binding host context failed: 0x%x", handle.eglGetError());
+            }
         }
 
         // --- Deep diagnostic: verify MobileGL EGL state ---
@@ -1434,6 +1454,378 @@ static void diag_read_pixels(EGLint w, EGLint h) {
     }
 }
 
+// BEGIN_AA_PASS
+// ── Post-process FXAA (Settings → Anti-aliasing) ─────────────────────────────
+// Filters the frame that is about to be presented, on the GLES 3 context this
+// bridge already owns. Every binding and enable it changes is read first and put
+// back afterwards, so the renderer's own GL state stays valid. Off by default.
+#define PL_AA_TEXTURE_2D               0x0DE1
+#define PL_AA_TEXTURE0                 0x84C0
+#define PL_AA_ACTIVE_TEXTURE           0x84E0
+#define PL_AA_TEXTURE_BINDING_2D       0x8069
+#define PL_AA_TEXTURE_MIN_FILTER       0x2801
+#define PL_AA_TEXTURE_MAG_FILTER       0x2800
+#define PL_AA_TEXTURE_WRAP_S           0x2802
+#define PL_AA_TEXTURE_WRAP_T           0x2803
+#define PL_AA_LINEAR                   0x2601
+#define PL_AA_CLAMP_TO_EDGE            0x812F
+#define PL_AA_RGBA                     0x1908
+#define PL_AA_RGBA8                    0x8058
+#define PL_AA_UNSIGNED_BYTE            0x1401
+#define PL_AA_FLOAT                    0x1406
+#define PL_AA_READ_FRAMEBUFFER         0x8CA8
+#define PL_AA_DRAW_FRAMEBUFFER         0x8CA9
+#define PL_AA_READ_FRAMEBUFFER_BINDING 0x8CAA
+#define PL_AA_DRAW_FRAMEBUFFER_BINDING 0x8CA6
+#define PL_AA_ARRAY_BUFFER             0x8892
+#define PL_AA_ARRAY_BUFFER_BINDING     0x8894
+#define PL_AA_STATIC_DRAW              0x88E4
+#define PL_AA_VERTEX_ARRAY_BINDING     0x85B5
+#define PL_AA_CURRENT_PROGRAM          0x8B8D
+#define PL_AA_VIEWPORT                 0x0BA2
+#define PL_AA_COLOR_WRITEMASK          0x0C23
+#define PL_AA_SCISSOR_TEST             0x0C11
+#define PL_AA_BLEND                    0x0BE2
+#define PL_AA_DEPTH_TEST               0x0B71
+#define PL_AA_CULL_FACE                0x0B44
+#define PL_AA_STENCIL_TEST             0x0B90
+#define PL_AA_VERTEX_SHADER            0x8B31
+#define PL_AA_FRAGMENT_SHADER          0x8B30
+#define PL_AA_COMPILE_STATUS           0x8B81
+#define PL_AA_LINK_STATUS              0x8B82
+#define PL_AA_TRIANGLE_STRIP           0x0005
+
+typedef struct {
+    void (*GetIntegerv)(unsigned int pname, int *data);
+    void (*GetBooleanv)(unsigned int pname, unsigned char *data);
+    unsigned char (*IsEnabled)(unsigned int cap);
+    void (*Enable)(unsigned int cap);
+    void (*Disable)(unsigned int cap);
+    void (*Viewport)(int x, int y, int width, int height);
+    void (*ColorMask)(unsigned char r, unsigned char g, unsigned char b, unsigned char a);
+    void (*ActiveTexture)(unsigned int texture);
+    void (*BindTexture)(unsigned int target, unsigned int texture);
+    void (*GenTextures)(int n, unsigned int *textures);
+    void (*TexImage2D)(unsigned int target, int level, int internalformat, int width, int height,
+                       int border, unsigned int format, unsigned int type, const void *pixels);
+    void (*TexParameteri)(unsigned int target, unsigned int pname, int param);
+    void (*CopyTexSubImage2D)(unsigned int target, int level, int xoffset, int yoffset,
+                              int x, int y, int width, int height);
+    void (*BindFramebuffer)(unsigned int target, unsigned int framebuffer);
+    unsigned int (*CreateShader)(unsigned int type);
+    void (*ShaderSource)(unsigned int shader, int count, const char *const *string, const int *length);
+    void (*CompileShader)(unsigned int shader);
+    void (*GetShaderiv)(unsigned int shader, unsigned int pname, int *params);
+    void (*GetShaderInfoLog)(unsigned int shader, int bufSize, int *length, char *infoLog);
+    void (*DeleteShader)(unsigned int shader);
+    unsigned int (*CreateProgram)(void);
+    void (*AttachShader)(unsigned int program, unsigned int shader);
+    void (*BindAttribLocation)(unsigned int program, unsigned int index, const char *name);
+    void (*LinkProgram)(unsigned int program);
+    void (*GetProgramiv)(unsigned int program, unsigned int pname, int *params);
+    void (*GetProgramInfoLog)(unsigned int program, int bufSize, int *length, char *infoLog);
+    void (*UseProgram)(unsigned int program);
+    int (*GetUniformLocation)(unsigned int program, const char *name);
+    void (*Uniform1i)(int location, int v0);
+    void (*Uniform2f)(int location, float v0, float v1);
+    void (*GenVertexArrays)(int n, unsigned int *arrays);
+    void (*BindVertexArray)(unsigned int array);
+    void (*GenBuffers)(int n, unsigned int *buffers);
+    void (*BindBuffer)(unsigned int target, unsigned int buffer);
+    void (*BufferData)(unsigned int target, ptrdiff_t size, const void *data, unsigned int usage);
+    void (*EnableVertexAttribArray)(unsigned int index);
+    void (*VertexAttribPointer)(unsigned int index, int size, unsigned int type,
+                                unsigned char normalized, int stride, const void *pointer);
+    void (*DrawArrays)(unsigned int mode, int first, int count);
+} pl_aa_gl_t;
+
+typedef struct {
+    pl_aa_gl_t gl;
+    int resolved;            // every entry point above was found
+    int failed;              // this context cannot run the pass: stop retrying
+    int logged;
+    void *owner;             // bundle the GL objects below were made for
+    unsigned int program, vao, vbo, texture;
+    int locScene, locInvRes;
+    int texW, texH;
+} pl_aa_state_t;
+
+static pl_aa_state_t pl_aa_state;
+
+typedef struct {
+    int program, vao, arrayBuffer, readFbo, drawFbo, activeTexture, texture0;
+    int viewport[4];
+    unsigned char colorMask[4];
+    unsigned char scissor, blend, depth, cull, stencil;
+} pl_aa_saved_t;
+
+#define PL_AA_LOAD(fn) do { \
+        pl_aa_state.gl.fn = (__typeof__(pl_aa_state.gl.fn))handle.eglGetProcAddress("gl" #fn); \
+        if (!pl_aa_state.gl.fn) return 0; \
+    } while (0)
+
+static int pl_aa_resolve(void) {
+    if (pl_aa_state.resolved) return 1;
+    if (!handle.eglGetProcAddress) return 0;
+    PL_AA_LOAD(GetIntegerv);
+    PL_AA_LOAD(GetBooleanv);
+    PL_AA_LOAD(IsEnabled);
+    PL_AA_LOAD(Enable);
+    PL_AA_LOAD(Disable);
+    PL_AA_LOAD(Viewport);
+    PL_AA_LOAD(ColorMask);
+    PL_AA_LOAD(ActiveTexture);
+    PL_AA_LOAD(BindTexture);
+    PL_AA_LOAD(GenTextures);
+    PL_AA_LOAD(TexImage2D);
+    PL_AA_LOAD(TexParameteri);
+    PL_AA_LOAD(CopyTexSubImage2D);
+    PL_AA_LOAD(BindFramebuffer);
+    PL_AA_LOAD(CreateShader);
+    PL_AA_LOAD(ShaderSource);
+    PL_AA_LOAD(CompileShader);
+    PL_AA_LOAD(GetShaderiv);
+    PL_AA_LOAD(GetShaderInfoLog);
+    PL_AA_LOAD(DeleteShader);
+    PL_AA_LOAD(CreateProgram);
+    PL_AA_LOAD(AttachShader);
+    PL_AA_LOAD(BindAttribLocation);
+    PL_AA_LOAD(LinkProgram);
+    PL_AA_LOAD(GetProgramiv);
+    PL_AA_LOAD(GetProgramInfoLog);
+    PL_AA_LOAD(UseProgram);
+    PL_AA_LOAD(GetUniformLocation);
+    PL_AA_LOAD(Uniform1i);
+    PL_AA_LOAD(Uniform2f);
+    PL_AA_LOAD(GenVertexArrays);
+    PL_AA_LOAD(BindVertexArray);
+    PL_AA_LOAD(GenBuffers);
+    PL_AA_LOAD(BindBuffer);
+    PL_AA_LOAD(BufferData);
+    PL_AA_LOAD(EnableVertexAttribArray);
+    PL_AA_LOAD(VertexAttribPointer);
+    PL_AA_LOAD(DrawArrays);
+    pl_aa_state.resolved = 1;
+    return 1;
+}
+
+static void pl_aa_set_cap(unsigned int cap, unsigned char on) {
+    if (on) pl_aa_state.gl.Enable(cap);
+    else pl_aa_state.gl.Disable(cap);
+}
+
+static void pl_aa_save(pl_aa_saved_t *s) {
+    pl_aa_gl_t *gl = &pl_aa_state.gl;
+    gl->GetIntegerv(PL_AA_CURRENT_PROGRAM, &s->program);
+    gl->GetIntegerv(PL_AA_VERTEX_ARRAY_BINDING, &s->vao);
+    gl->GetIntegerv(PL_AA_ARRAY_BUFFER_BINDING, &s->arrayBuffer);
+    gl->GetIntegerv(PL_AA_READ_FRAMEBUFFER_BINDING, &s->readFbo);
+    gl->GetIntegerv(PL_AA_DRAW_FRAMEBUFFER_BINDING, &s->drawFbo);
+    gl->GetIntegerv(PL_AA_ACTIVE_TEXTURE, &s->activeTexture);
+    gl->ActiveTexture(PL_AA_TEXTURE0);
+    gl->GetIntegerv(PL_AA_TEXTURE_BINDING_2D, &s->texture0);
+    gl->GetIntegerv(PL_AA_VIEWPORT, s->viewport);
+    gl->GetBooleanv(PL_AA_COLOR_WRITEMASK, s->colorMask);
+    s->scissor = gl->IsEnabled(PL_AA_SCISSOR_TEST);
+    s->blend = gl->IsEnabled(PL_AA_BLEND);
+    s->depth = gl->IsEnabled(PL_AA_DEPTH_TEST);
+    s->cull = gl->IsEnabled(PL_AA_CULL_FACE);
+    s->stencil = gl->IsEnabled(PL_AA_STENCIL_TEST);
+}
+
+static void pl_aa_restore(const pl_aa_saved_t *s) {
+    pl_aa_gl_t *gl = &pl_aa_state.gl;
+    gl->BindVertexArray((unsigned int)s->vao);
+    gl->UseProgram((unsigned int)s->program);
+    gl->BindBuffer(PL_AA_ARRAY_BUFFER, (unsigned int)s->arrayBuffer);
+    gl->BindFramebuffer(PL_AA_READ_FRAMEBUFFER, (unsigned int)s->readFbo);
+    gl->BindFramebuffer(PL_AA_DRAW_FRAMEBUFFER, (unsigned int)s->drawFbo);
+    gl->ActiveTexture(PL_AA_TEXTURE0);
+    gl->BindTexture(PL_AA_TEXTURE_2D, (unsigned int)s->texture0);
+    gl->ActiveTexture((unsigned int)s->activeTexture);
+    gl->Viewport(s->viewport[0], s->viewport[1], s->viewport[2], s->viewport[3]);
+    gl->ColorMask(s->colorMask[0], s->colorMask[1], s->colorMask[2], s->colorMask[3]);
+    pl_aa_set_cap(PL_AA_SCISSOR_TEST, s->scissor);
+    pl_aa_set_cap(PL_AA_BLEND, s->blend);
+    pl_aa_set_cap(PL_AA_DEPTH_TEST, s->depth);
+    pl_aa_set_cap(PL_AA_CULL_FACE, s->cull);
+    pl_aa_set_cap(PL_AA_STENCIL_TEST, s->stencil);
+}
+
+static unsigned int pl_aa_compile(unsigned int type, const char *source) {
+    pl_aa_gl_t *gl = &pl_aa_state.gl;
+    unsigned int shader = gl->CreateShader(type);
+    if (!shader) return 0;
+    gl->ShaderSource(shader, 1, &source, NULL);
+    gl->CompileShader(shader);
+    int ok = 0;
+    gl->GetShaderiv(shader, PL_AA_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char log[512] = {0};
+        gl->GetShaderInfoLog(shader, (int)sizeof(log), NULL, log);
+        NSLog(@"[EGLBridge] FXAA shader failed to compile: %s", log);
+        gl->DeleteShader(shader);
+        return 0;
+    }
+    return shader;
+}
+
+// Creates the program, the full-screen strip and the copy texture for the
+// current context. Runs inside pl_aa_save / pl_aa_restore.
+static int pl_aa_build(void) {
+    static const char vsSource[] =
+        "#version 300 es\n"
+        "layout(location = 0) in vec2 aPos;\n"
+        "out vec2 vUv;\n"
+        "void main() {\n"
+        "    vUv = aPos * 0.5 + 0.5;\n"
+        "    gl_Position = vec4(aPos, 0.0, 1.0);\n"
+        "}\n";
+    // FXAA: edge direction from the four diagonal lumas, then a blend along it.
+    static const char fsSource[] =
+        "#version 300 es\n"
+        "precision highp float;\n"
+        "uniform sampler2D uScene;\n"
+        "uniform vec2 uInvRes;\n"
+        "in vec2 vUv;\n"
+        "out vec4 fragColor;\n"
+        "float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }\n"
+        "void main() {\n"
+        "    vec3 rgbNW = texture(uScene, vUv + vec2(-1.0, -1.0) * uInvRes).rgb;\n"
+        "    vec3 rgbNE = texture(uScene, vUv + vec2( 1.0, -1.0) * uInvRes).rgb;\n"
+        "    vec3 rgbSW = texture(uScene, vUv + vec2(-1.0,  1.0) * uInvRes).rgb;\n"
+        "    vec3 rgbSE = texture(uScene, vUv + vec2( 1.0,  1.0) * uInvRes).rgb;\n"
+        "    vec3 rgbM  = texture(uScene, vUv).rgb;\n"
+        "    float lNW = luma(rgbNW);\n"
+        "    float lNE = luma(rgbNE);\n"
+        "    float lSW = luma(rgbSW);\n"
+        "    float lSE = luma(rgbSE);\n"
+        "    float lM  = luma(rgbM);\n"
+        "    float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));\n"
+        "    float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));\n"
+        "    vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));\n"
+        "    float dirReduce = max((lNW + lNE + lSW + lSE) * 0.03125, 1.0 / 128.0);\n"
+        "    float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);\n"
+        "    dir = clamp(dir * rcpDirMin, vec2(-8.0), vec2(8.0)) * uInvRes;\n"
+        "    vec3 rgbA = 0.5 * (texture(uScene, vUv + dir * (1.0 / 3.0 - 0.5)).rgb\n"
+        "                     + texture(uScene, vUv + dir * (2.0 / 3.0 - 0.5)).rgb);\n"
+        "    vec3 rgbB = rgbA * 0.5 + 0.25 * (texture(uScene, vUv - dir * 0.5).rgb\n"
+        "                                  + texture(uScene, vUv + dir * 0.5).rgb);\n"
+        "    float lB = luma(rgbB);\n"
+        "    fragColor = vec4((lB < lMin || lB > lMax) ? rgbA : rgbB, 1.0);\n"
+        "}\n";
+    pl_aa_gl_t *gl = &pl_aa_state.gl;
+    unsigned int vs = pl_aa_compile(PL_AA_VERTEX_SHADER, vsSource);
+    unsigned int fs = pl_aa_compile(PL_AA_FRAGMENT_SHADER, fsSource);
+    if (!vs || !fs) {
+        if (vs) gl->DeleteShader(vs);
+        if (fs) gl->DeleteShader(fs);
+        return 0;
+    }
+    unsigned int prog = gl->CreateProgram();
+    gl->AttachShader(prog, vs);
+    gl->AttachShader(prog, fs);
+    gl->BindAttribLocation(prog, 0, "aPos");
+    gl->LinkProgram(prog);
+    gl->DeleteShader(vs);
+    gl->DeleteShader(fs);
+    int linked = 0;
+    gl->GetProgramiv(prog, PL_AA_LINK_STATUS, &linked);
+    if (!linked) {
+        char log[512] = {0};
+        gl->GetProgramInfoLog(prog, (int)sizeof(log), NULL, log);
+        NSLog(@"[EGLBridge] FXAA program failed to link: %s", log);
+        return 0;
+    }
+    static const float quad[8] = { -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f };
+    gl->GenVertexArrays(1, &pl_aa_state.vao);
+    gl->BindVertexArray(pl_aa_state.vao);
+    gl->GenBuffers(1, &pl_aa_state.vbo);
+    gl->BindBuffer(PL_AA_ARRAY_BUFFER, pl_aa_state.vbo);
+    gl->BufferData(PL_AA_ARRAY_BUFFER, (ptrdiff_t)sizeof(quad), quad, PL_AA_STATIC_DRAW);
+    gl->EnableVertexAttribArray(0);
+    gl->VertexAttribPointer(0, 2, PL_AA_FLOAT, 0, 0, NULL);
+    gl->GenTextures(1, &pl_aa_state.texture);
+    gl->BindTexture(PL_AA_TEXTURE_2D, pl_aa_state.texture);
+    gl->TexParameteri(PL_AA_TEXTURE_2D, PL_AA_TEXTURE_MIN_FILTER, PL_AA_LINEAR);
+    gl->TexParameteri(PL_AA_TEXTURE_2D, PL_AA_TEXTURE_MAG_FILTER, PL_AA_LINEAR);
+    gl->TexParameteri(PL_AA_TEXTURE_2D, PL_AA_TEXTURE_WRAP_S, PL_AA_CLAMP_TO_EDGE);
+    gl->TexParameteri(PL_AA_TEXTURE_2D, PL_AA_TEXTURE_WRAP_T, PL_AA_CLAMP_TO_EDGE);
+    pl_aa_state.program = prog;
+    pl_aa_state.locScene = gl->GetUniformLocation(prog, "uScene");
+    pl_aa_state.locInvRes = gl->GetUniformLocation(prog, "uInvRes");
+    pl_aa_state.texW = 0;
+    pl_aa_state.texH = 0;
+    return 1;
+}
+
+static void pl_aa_fxaa_present(EGLSurface surface) {
+    EGLint w = 0, h = 0;
+    handle.eglQuerySurface(g_EglDisplay, surface, EGL_WIDTH, &w);
+    handle.eglQuerySurface(g_EglDisplay, surface, EGL_HEIGHT, &h);
+    if (w <= 0 || h <= 0) return;
+
+    if (pl_aa_state.owner != (void *)currentBundle) {
+        // Another context: the objects made for the previous one are not usable here.
+        pl_aa_state.owner = (void *)currentBundle;
+        pl_aa_state.failed = 0;
+        pl_aa_state.program = 0;
+        pl_aa_state.vao = 0;
+        pl_aa_state.vbo = 0;
+        pl_aa_state.texture = 0;
+        pl_aa_state.texW = 0;
+        pl_aa_state.texH = 0;
+    }
+    if (pl_aa_state.failed) return;
+    if (!pl_aa_resolve()) {
+        pl_aa_state.failed = 1;
+        NSLog(@"[EGLBridge] FXAA disabled: GLES 3 entry points not found");
+        return;
+    }
+
+    pl_aa_saved_t saved;
+    pl_aa_save(&saved);
+    if (!pl_aa_state.program && !pl_aa_build()) {
+        pl_aa_state.failed = 1;
+        NSLog(@"[EGLBridge] FXAA disabled for this context (needs GLES 3.0)");
+        pl_aa_restore(&saved);
+        return;
+    }
+
+    pl_aa_gl_t *gl = &pl_aa_state.gl;
+    // Copy the presented frame into the texture ...
+    gl->BindFramebuffer(PL_AA_READ_FRAMEBUFFER, 0);
+    gl->ActiveTexture(PL_AA_TEXTURE0);
+    gl->BindTexture(PL_AA_TEXTURE_2D, pl_aa_state.texture);
+    if (pl_aa_state.texW != w || pl_aa_state.texH != h) {
+        gl->TexImage2D(PL_AA_TEXTURE_2D, 0, PL_AA_RGBA8, w, h, 0, PL_AA_RGBA, PL_AA_UNSIGNED_BYTE, NULL);
+        pl_aa_state.texW = w;
+        pl_aa_state.texH = h;
+    }
+    gl->CopyTexSubImage2D(PL_AA_TEXTURE_2D, 0, 0, 0, 0, 0, w, h);
+    // ... then filter it back onto the back buffer.
+    gl->BindFramebuffer(PL_AA_DRAW_FRAMEBUFFER, 0);
+    gl->Viewport(0, 0, w, h);
+    gl->ColorMask(1, 1, 1, 1);
+    pl_aa_set_cap(PL_AA_SCISSOR_TEST, 0);
+    pl_aa_set_cap(PL_AA_BLEND, 0);
+    pl_aa_set_cap(PL_AA_DEPTH_TEST, 0);
+    pl_aa_set_cap(PL_AA_CULL_FACE, 0);
+    pl_aa_set_cap(PL_AA_STENCIL_TEST, 0);
+    gl->UseProgram(pl_aa_state.program);
+    gl->BindVertexArray(pl_aa_state.vao);
+    gl->Uniform1i(pl_aa_state.locScene, 0);
+    gl->Uniform2f(pl_aa_state.locInvRes, 1.0f / (float)w, 1.0f / (float)h);
+    gl->DrawArrays(PL_AA_TRIANGLE_STRIP, 0, 4);
+
+    pl_aa_restore(&saved);
+    if (!pl_aa_state.logged) {
+        pl_aa_state.logged = 1;
+        NSLog(@"[EGLBridge] FXAA present pass active (%dx%d)", (int)w, (int)h);
+    }
+}
+// END_AA_PASS
+
 void gl_swap_buffers() {
     if (!currentBundle) return;
     static int swapCount = 0;
@@ -1475,6 +1867,11 @@ void gl_swap_buffers() {
         // TGLES bridge-side pixels + (at #600) gap ledger: tells black-screen
         // apart (TGLES draws nothing vs present never reaches the screen).
         tgles_probe_diagnostics(swapCount);
+    }
+    // Optional FXAA on the frame about to be presented (Settings → Anti-aliasing).
+    // MobileGL and the TGLES bridge present through their own paths, so skip them.
+    if (getPrefInt(@"video.antialiasing") == 1 && !g_mgl_handle && !tgles_is_active()) {
+        pl_aa_fxaa_present(currentBundle->gl.surface);
     }
     if (!handle.eglSwapBuffers(g_EglDisplay, currentBundle->gl.surface)) {
         if (handle.eglGetError() == EGL_BAD_SURFACE)

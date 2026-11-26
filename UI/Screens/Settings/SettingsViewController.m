@@ -161,6 +161,10 @@ static BOOL isPercentPrefKey(NSString *key) {
         @{@"title": localize(@"Game", nil), @"items": @[
             header(@"settings.group.display"),
             @{@"type": @"picker", @"label": localize(@"preference.title.renderer", nil), @"key": @"video.renderer", @"options": rendererOptions, @"default": @"auto"},
+            @{@"type": @"picker", @"label": localize(@"preference.title.antialiasing", nil), @"key": @"video.antialiasing", @"default": @"0", @"options": @[
+                @{@"key": @"0", @"name": localize(@"preference.title.antialiasing.off", nil)},
+                @{@"key": @"1", @"name": localize(@"preference.title.antialiasing.fxaa", nil)},
+            ]},
             @{@"type": @"picker", @"label": localize(@"preference.title.graphics_backend_forcing", nil), @"key": @"video.graphics_backend_forcing", @"options": @[
                 @{@"key": @"auto", @"name": localize(@"preference.gbf.auto", nil)},
                 @{@"key": @"vulkan", @"name": localize(@"preference.gbf.vulkan", nil)},

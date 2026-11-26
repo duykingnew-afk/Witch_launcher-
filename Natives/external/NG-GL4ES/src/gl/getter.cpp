@@ -276,6 +276,9 @@ extern "C"
     }
 
     char* getBeforeThirdSpace(const char* str) {
+        // The EGL driver returns NULL for GL_VERSION / GL_RENDERER while no
+        // context is current (Krypton hosts may be in that state briefly).
+        if (!str) str = "";
         int spaceCount = 0;
         const char* start = str;
         while (*str) {

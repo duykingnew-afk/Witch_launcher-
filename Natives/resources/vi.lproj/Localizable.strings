@@ -252,6 +252,9 @@
 "preference.title.done.erase_demo_data" = "Tất cả dữ liệu trò chơi Demo đã bị xóa.";
 
 "preference.title.renderer" = "Trình kết xuất";
+"preference.title.antialiasing" = "Khử răng cưa";
+"preference.title.antialiasing.off" = "Tắt";
+"preference.title.antialiasing.fxaa" = "FXAA (hậu xử lý)";
 
 "preference.title.renderer.release.auto" = "Tự động";
 "preference.title.renderer.release.gl4es" = "gl4es Thần Thánh";

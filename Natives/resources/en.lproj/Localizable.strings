@@ -307,6 +307,9 @@
 "preference.title.mg_fsr1_setting-3" = "Performance";
 
 "preference.title.renderer" = "Renderer";
+"preference.title.antialiasing" = "Anti-aliasing";
+"preference.title.antialiasing.off" = "Off";
+"preference.title.antialiasing.fxaa" = "FXAA (post-process)";
 
 "preference.title.renderer.release.auto" = "Auto";
 "preference.title.renderer.release.gl4es" = "holy gl4es";
