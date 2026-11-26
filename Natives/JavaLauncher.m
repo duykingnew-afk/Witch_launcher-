@@ -607,16 +607,27 @@ static void JIT26SetDetachAfterFirstBrGuarded(BOOL value) {
 // the log now says what happened instead of leaving no trace at all.
 static void onFatalSignal(int sig, siginfo_t *info, void *ucontext) {
     uintptr_t pc = 0;
+    uintptr_t lr = 0;
 #ifdef WITCH_JIT_CAN_SKIP_TRAP
     ucontext_t *context = (ucontext_t *)ucontext;
     if (context && context->uc_mcontext) {
         pc = (uintptr_t)arm_thread_state64_get_pc(context->uc_mcontext->__ss);
+        // A call through a NULL function pointer leaves pc=0, but LR still holds
+        // the return address of the code that made the call, which names the caller.
+        lr = (uintptr_t)context->uc_mcontext->__ss.__lr;
     }
 #else
     (void)ucontext;
 #endif
-    NSLog(@"[JavaLauncher] Fatal signal %d (code %d) pc=%p addr=%p - the JIT memory was not executable or the runtime faulted",
-          sig, info ? info->si_code : 0, (void *)pc, info ? info->si_addr : NULL);
+    const char *callerImage = "?";
+    const char *callerSymbol = "?";
+    Dl_info dlInfo = {0};
+    if (lr && dladdr((void *)lr, &dlInfo)) {
+        if (dlInfo.dli_fname) callerImage = dlInfo.dli_fname;
+        if (dlInfo.dli_sname) callerSymbol = dlInfo.dli_sname;
+    }
+    NSLog(@"[JavaLauncher] Fatal signal %d (code %d) pc=%p lr=%p caller=%s in %s addr=%p - the JIT memory was not executable or the runtime faulted",
+          sig, info ? info->si_code : 0, (void *)pc, (void *)lr, callerSymbol, callerImage, info ? info->si_addr : NULL);
     struct sigaction dfl = {0};
     dfl.sa_handler = SIG_DFL;
     sigemptyset(&dfl.sa_mask);
@@ -949,6 +960,11 @@ int launchJVMWithArgs(NSString *username, id launchTarget, int width, int height
     }
     NSLog(@"[JavaLauncher] RENDERER is set to %@\n", renderer);
     setenv("AMETHYST_RENDERER", renderer.UTF8String, 1);
+    // Krypton (NG-GL4ES) reports GL 3.1 unless LIBGL_GL is set. Ask for 4.0;
+    // overwrite=0 keeps a LIBGL_GL value the environment already provides.
+    if ([renderer isEqualToString:@ RENDERER_NAME_KRYPTON]) {
+        setenv("LIBGL_GL", "40", 0);
+    }
     // MC 26.x graphics-API forcing policy (video.graphics_backend_forcing pref).
     // Values match `--graphicsBackend` semantics: vulkan|opengl force that API,
     // "none" appends nothing so MC honors its own in-game "Graphics Backend"
