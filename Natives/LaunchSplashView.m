@@ -165,12 +165,18 @@ static const CFTimeInterval kWordmarkRevealDuration = 0.5;
     if (video.length > 0) {
         AVPlayerItem *item = [AVPlayerItem playerItemWithURL:[NSURL fileURLWithPath:video]];
         AVPlayer *player = [[AVPlayer alloc] initWithPlayerItem:item];
-        // The video's soundtrack is the waiting music shown while the game starts. Mix it
-        // with other audio, the same way the launcher's background video does.
-        player.muted = NO;
-        [AVAudioSession.sharedInstance setCategory:AVAudioSessionCategoryAmbient
-                                       withOptions:AVAudioSessionCategoryOptionMixWithOthers
-                                             error:nil];
+        // The video's soundtrack is the waiting music shown while the game starts. It follows the same sound
+        // switch as the launcher's background video (ThemeManager.backgroundVideoSound): with the switch on and an
+        // audio track in the file, the sound plays ambient, mixed with other audio; otherwise the picture plays silently.
+        BOOL withSound = ThemeManager.shared.backgroundVideoSound &&
+            [item.asset tracksWithMediaType:AVMediaTypeAudio].count > 0;
+        if (withSound) {
+            [AVAudioSession.sharedInstance setCategory:AVAudioSessionCategoryAmbient
+                                           withOptions:AVAudioSessionCategoryOptionMixWithOthers
+                                                 error:nil];
+        }
+        player.muted = !withSound;
+        player.volume = withSound ? 1.0f : 0.0f;
         self.player = player;
         self.playerItem = item;
         self.playerObserver = [[NSNotificationCenter defaultCenter]
